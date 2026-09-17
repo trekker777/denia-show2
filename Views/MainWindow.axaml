@@ -1,0 +1,369 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:libvlc_media.ViewModels"
+        xmlns:models="using:libvlc_media.Models"
+        xmlns:controls="using:libvlc_media.Controls"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1400" d:DesignHeight="860"
+        x:Class="libvlc_media.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="Slide Presenter"
+        Width="1440"
+        Height="900"
+        MinWidth="1100"
+        MinHeight="700">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Right" Command="{Binding NextSlideCommand}"/>
+        <KeyBinding Gesture="Left" Command="{Binding PreviousSlideCommand}"/>
+        <KeyBinding Gesture="PageDown" Command="{Binding NextSlideCommand}"/>
+        <KeyBinding Gesture="PageUp" Command="{Binding PreviousSlideCommand}"/>
+        <KeyBinding Gesture="B" Command="{Binding ToggleBlankCommand}"/>
+        <KeyBinding Gesture="F5" Command="{Binding ToggleProjectorCommand}"/>
+        <KeyBinding Gesture="Space" Command="{Binding NextSlideCommand}"/>
+    </Window.KeyBindings>
+
+    <DockPanel>
+        <Border DockPanel.Dock="Top"
+                Padding="16,10"
+                BorderBrush="#333"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <TextBlock Text="Slide Presenter"
+                               FontSize="20"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                    <Border Background="#b71c1c"
+                            CornerRadius="4"
+                            Padding="8,2"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding IsProjectorOpen}">
+                        <TextBlock Text="LIVE"
+                                   FontWeight="Bold"
+                                   FontSize="12"
+                                   Foreground="White"/>
+                    </Border>
+                    <TextBlock Text="{Binding OutputCaption}"
+                               Opacity="0.75"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="Video renderer"
+                               VerticalAlignment="Center"
+                               Opacity="0.8"/>
+                    <ComboBox Width="170"
+                              ItemsSource="{Binding VideoRenderers}"
+                              SelectedItem="{Binding SelectedVideoRenderer}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:VideoRendererOption">
+                                <TextBlock Text="{Binding Name}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Text="Projector display"
+                               VerticalAlignment="Center"
+                               Opacity="0.8"/>
+                    <ComboBox Width="280"
+                              ItemsSource="{Binding Displays}"
+                              SelectedItem="{Binding SelectedDisplay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:DisplayInfo">
+                                <TextBlock Text="{Binding Name}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Content="{Binding ProjectorLabel}"
+                            Command="{Binding ToggleProjectorCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom"
+                Padding="16,8"
+                BorderBrush="#333"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <ProgressBar Width="120"
+                             Height="6"
+                             IsIndeterminate="True"
+                             IsVisible="{Binding IsBusy}"
+                             VerticalAlignment="Center"
+                             Margin="0,0,12,0"/>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding StatusMessage}"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center"
+                           Opacity="0.85"/>
+                <TextBlock Grid.Column="2"
+                           Text="← →  next/prev   B  blank   F5  projector"
+                           Opacity="0.45"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <Grid ColumnDefinitions="280,4,*,4,420" Margin="8">
+            <Grid RowDefinitions="*,8,*">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
+                        <TextBlock Text="Slide decks"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <Button Grid.Column="1"
+                                Content="Import PDF"
+                                Command="{Binding ImportPdfCommand}"
+                                Margin="0,0,6,0"/>
+                        <Button Grid.Column="2"
+                                Content="Remove"
+                                Command="{Binding RemoveSelectedDeckCommand}"/>
+                    </Grid>
+                    <TextBlock Text="Import a PDF. Each file becomes its own deck."
+                               DockPanel.Dock="Top"
+                               Opacity="0.55"
+                               FontSize="12"
+                               Margin="0,0,0,8"
+                               IsVisible="{Binding !HasDecks}"/>
+                    <ListBox ItemsSource="{Binding Decks}"
+                             SelectedItem="{Binding SelectedDeck}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SlideDeckViewModel">
+                                <StackPanel Margin="2,4" Spacing="2">
+                                    <TextBlock Text="{Binding Name}"
+                                               FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Summary}"
+                                               Opacity="0.65"
+                                               FontSize="11"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+
+                <GridSplitter Grid.Row="1" ResizeDirection="Rows"/>
+
+                <DockPanel Grid.Row="2">
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
+                        <TextBlock Text="Videos (.mp4)"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <Button Grid.Column="1"
+                                Content="Import"
+                                Command="{Binding ImportVideoCommand}"
+                                Margin="0,0,6,0"/>
+                        <Button Grid.Column="2"
+                                Content="Remove"
+                                Command="{Binding RemoveSelectedVideoCommand}"/>
+                    </Grid>
+                    <TextBlock Text="Imported videos play on the preview and the projector."
+                               DockPanel.Dock="Top"
+                               Opacity="0.55"
+                               FontSize="12"
+                               Margin="0,0,0,8"
+                               IsVisible="{Binding !HasVideos}"/>
+                    <ListBox ItemsSource="{Binding Videos}"
+                             SelectedItem="{Binding SelectedVideo}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MediaClipViewModel">
+                                <Grid ColumnDefinitions="*,Auto" Margin="2,4">
+                                    <TextBlock Text="{Binding Name}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <Button Grid.Column="1"
+                                            Content="Play"
+                                            Command="{Binding PlayCommand}"
+                                            Padding="10,2"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Grid>
+
+            <GridSplitter Grid.Column="1" ResizeDirection="Columns"/>
+
+            <DockPanel Grid.Column="2" Margin="8,0">
+                <Grid DockPanel.Dock="Top"
+                      ColumnDefinitions="*,Auto"
+                      Margin="0,0,0,10">
+                    <TextBlock Text="{Binding SelectedDeckTitle}"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="8"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="Slide size"
+                                   VerticalAlignment="Center"
+                                   Opacity="0.75"/>
+                        <Slider Width="160"
+                                Minimum="110"
+                                Maximum="360"
+                                Value="{Binding ThumbnailSize}"/>
+                    </StackPanel>
+                </Grid>
+
+                <Grid>
+                    <TextBlock Text="Select a deck on the left, then click a slide to send it to the preview and projector."
+                               Opacity="0.55"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Margin="40"
+                               IsVisible="{Binding !HasSlides}"/>
+
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto"
+                                  IsVisible="{Binding HasSlides}">
+                        <ItemsControl ItemsSource="{Binding SelectedDeck.Slides}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SlideItemViewModel">
+                                    <Button Classes="slide"
+                                            Command="{Binding PresentCommand}"
+                                            ToolTip.Tip="Show on preview and projector">
+                                        <Border Classes="slide-card"
+                                                Classes.selected="{Binding IsSelected}"
+                                                Width="{Binding DisplayWidth}"
+                                                Height="{Binding DisplayHeight}">
+                                            <Grid>
+                                                <Image Source="{Binding Thumbnail}"
+                                                       Stretch="Uniform"
+                                                       HorizontalAlignment="Stretch"
+                                                       VerticalAlignment="Stretch"/>
+                                                <Border Background="#99000000"
+                                                        HorizontalAlignment="Left"
+                                                        VerticalAlignment="Bottom"
+                                                        Margin="6"
+                                                        CornerRadius="3"
+                                                        Padding="6,1">
+                                                    <TextBlock Text="{Binding PageLabel}"
+                                                               FontSize="11"
+                                                               FontWeight="SemiBold"/>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="3" ResizeDirection="Columns"/>
+
+            <DockPanel Grid.Column="4" Margin="8,0,0,0">
+                <TextBlock DockPanel.Dock="Top"
+                           Text="Output preview"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8"/>
+
+                <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,12,0,0">
+                    <UniformGrid Columns="4" Rows="1">
+                        <Button Content="Prev"
+                                Command="{Binding PreviousSlideCommand}"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,0,4,0"/>
+                        <Button Content="Next"
+                                Command="{Binding NextSlideCommand}"
+                                HorizontalAlignment="Stretch"
+                                Margin="2,0"/>
+                        <Button Content="{Binding BlankLabel}"
+                                Command="{Binding ToggleBlankCommand}"
+                                HorizontalAlignment="Stretch"
+                                Margin="2,0"/>
+                        <Button Content="{Binding PauseLabel}"
+                                Command="{Binding TogglePauseCommand}"
+                                HorizontalAlignment="Stretch"
+                                Margin="4,0,0,0"/>
+                    </UniformGrid>
+
+                    <UniformGrid Columns="2">
+                        <Button Content="Play video"
+                                Command="{Binding PlaySelectedVideoCommand}"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,0,4,0"/>
+                        <Button Content="Stop video"
+                                Command="{Binding StopVideoCommand}"
+                                HorizontalAlignment="Stretch"
+                                Margin="4,0,0,0"/>
+                    </UniformGrid>
+
+                    <Border BorderBrush="#333"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="10">
+                        <StackPanel Spacing="8">
+                            <ToggleSwitch IsChecked="{Binding IsAutoAdvanceEnabled}"
+                                          OnContent="Auto-advance on"
+                                          OffContent="Auto-advance off"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Seconds"
+                                           VerticalAlignment="Center"
+                                           Opacity="0.75"/>
+                                <NumericUpDown Minimum="1"
+                                               Maximum="300"
+                                               Increment="1"
+                                               FormatString="0"
+                                               Width="90"
+                                               Value="{Binding AutoAdvanceSeconds}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <Border Background="Black"
+                        CornerRadius="6"
+                        MinHeight="220">
+                    <Grid>
+                        <TextBlock Text="Click a slide or press Play on a video"
+                                   Foreground="#888"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   TextAlignment="Center"
+                                   Margin="24"
+                                   IsVisible="{Binding ShowIdle}"/>
+
+                        <Image Source="{Binding PresentedImage}"
+                               Stretch="Uniform"
+                               IsVisible="{Binding ShowSlide}"/>
+
+                        <Border Background="#CC000000"
+                                IsVisible="{Binding IsBlanked}">
+                            <TextBlock Text="BLANK"
+                                       Foreground="White"
+                                       FontWeight="Bold"
+                                       FontSize="28"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+
+                        <controls:VlcVideoHost MediaPlayer="{Binding PreviewMediaPlayer}"
+                                               NativeVisible="{Binding ShowVideo}"
+                                               IsVisible="{Binding ShowVideo}"
+                                               HorizontalAlignment="Stretch"
+                                               VerticalAlignment="Stretch"/>
+                    </Grid>
+                </Border>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -1,0 +1,30 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:libvlc_media.ViewModels"
+        xmlns:controls="using:libvlc_media.Controls"
+        x:Class="libvlc_media.Views.OutputWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Projector"
+        Background="Black"
+        Width="1280"
+        Height="720"
+        WindowStartupLocation="Manual"
+        WindowDecorations="None"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True">
+
+    <Panel Background="Black">
+        <Image Source="{Binding PresentedImage}"
+               Stretch="Uniform"
+               IsVisible="{Binding ShowSlide}"/>
+
+        <Border Background="Black" IsVisible="{Binding IsBlanked}"/>
+
+        <controls:VlcVideoHost MediaPlayer="{Binding OutputMediaPlayer}"
+                               NativeVisible="{Binding ShowVideo}"
+                               IsVisible="{Binding ShowVideo}"
+                               HorizontalAlignment="Stretch"
+                               VerticalAlignment="Stretch"/>
+    </Panel>
+</Window>
