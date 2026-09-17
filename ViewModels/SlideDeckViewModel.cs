@@ -3,6 +3,7 @@ using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 
 namespace libvlc_media.ViewModels
 {
@@ -25,7 +26,17 @@ namespace libvlc_media.ViewModels
 
         public ObservableCollection<SlideItemViewModel> Slides { get; }
 
-        public string Summary => $"{Slides.Count} slide{(Slides.Count == 1 ? string.Empty : "s")}";
+        public string Summary
+        {
+            get
+            {
+                var videos = Slides.Count(s => s.IsVideo);
+                var stills = Slides.Count - videos;
+                if (videos == 0)
+                    return $"{stills} slide{(stills == 1 ? string.Empty : "s")}";
+                return $"{stills} slide{(stills == 1 ? string.Empty : "s")}, {videos} video{(videos == 1 ? string.Empty : "s")}";
+            }
+        }
 
         public string SourceFileName => Path.GetFileName(SourcePath);
 

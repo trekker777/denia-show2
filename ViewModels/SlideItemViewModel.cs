@@ -2,7 +2,6 @@ using Avalonia.Media.Imaging;
 using ReactiveUI;
 using System;
 using System.IO;
-using System.Reactive;
 using System.Windows.Input;
 
 namespace libvlc_media.ViewModels
@@ -10,26 +9,62 @@ namespace libvlc_media.ViewModels
     public sealed class SlideItemViewModel : ViewModelBase, IDisposable
     {
         private bool _isSelected;
+        private bool _showDropBefore;
+        private bool _showDropAfter;
         private double _displayWidth;
         private double _displayHeight;
 
-        public SlideItemViewModel(
-            string imagePath,
+        private SlideItemViewModel(
+            bool isVideo,
+            string path,
             int pageNumber,
             double displayWidth,
             double displayHeight,
             Action<SlideItemViewModel> present)
         {
-            ImagePath = imagePath;
-            PageNumber = pageNumber;
-            PageLabel = pageNumber.ToString();
+            IsVideo = isVideo;
             _displayWidth = displayWidth;
             _displayHeight = displayHeight;
-            Thumbnail = LoadThumbnail(imagePath, displayWidth);
             PresentCommand = ReactiveCommand.Create(() => present(this));
+
+            if (isVideo)
+            {
+                VideoPath = path;
+                ImagePath = string.Empty;
+                PageNumber = 0;
+                PageLabel = Path.GetFileName(path);
+                Thumbnail = null;
+            }
+            else
+            {
+                ImagePath = path;
+                VideoPath = null;
+                PageNumber = pageNumber;
+                PageLabel = pageNumber.ToString();
+                Thumbnail = LoadThumbnail(path, displayWidth);
+            }
         }
 
+        public static SlideItemViewModel FromImage(
+            string imagePath,
+            int pageNumber,
+            double displayWidth,
+            double displayHeight,
+            Action<SlideItemViewModel> present) =>
+            new(false, imagePath, pageNumber, displayWidth, displayHeight, present);
+
+        public static SlideItemViewModel FromVideo(
+            string videoPath,
+            double displayWidth,
+            double displayHeight,
+            Action<SlideItemViewModel> present) =>
+            new(true, videoPath, 0, displayWidth, displayHeight, present);
+
+        public bool IsVideo { get; }
+
         public string ImagePath { get; }
+
+        public string? VideoPath { get; }
 
         public int PageNumber { get; }
 
@@ -55,6 +90,18 @@ namespace libvlc_media.ViewModels
         {
             get => _isSelected;
             set => this.RaiseAndSetIfChanged(ref _isSelected, value);
+        }
+
+        public bool ShowDropBefore
+        {
+            get => _showDropBefore;
+            set => this.RaiseAndSetIfChanged(ref _showDropBefore, value);
+        }
+
+        public bool ShowDropAfter
+        {
+            get => _showDropAfter;
+            set => this.RaiseAndSetIfChanged(ref _showDropAfter, value);
         }
 
         public void Dispose() => Thumbnail?.Dispose();

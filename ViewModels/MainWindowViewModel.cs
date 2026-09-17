@@ -163,10 +163,14 @@ namespace libvlc_media.ViewModels
             {
                 if (IsBlanked)
                     return "BLANK";
+                if (IsVideoActive && SelectedSlide is { IsVideo: true })
+                    return SelectedSlide.PageLabel;
                 if (IsVideoActive && SelectedVideo is not null)
                     return SelectedVideo.Name;
                 if (SelectedSlide is not null && SelectedDeck is not null)
-                    return $"{SelectedDeck.Name}  ·  slide {SelectedSlide.PageNumber}";
+                    return SelectedSlide.IsVideo
+                        ? $"{SelectedDeck.Name}  ·  {SelectedSlide.PageLabel}"
+                        : $"{SelectedDeck.Name}  ·  slide {SelectedSlide.PageNumber}";
                 return "No output";
             }
         }
@@ -366,17 +370,24 @@ namespace libvlc_media.ViewModels
 
         public void PresentSlide(SlideItemViewModel slide)
         {
-            StopVideo();
-            IsBlanked = false;
             SelectedDeck ??= FindDeck(slide);
+            SelectOnly(slide);
+            SelectedSlide = slide;
+            IsBlanked = false;
 
-            foreach (var deck in Decks)
+            if (slide.IsVideo)
             {
-                foreach (var item in deck.Slides)
-                    item.IsSelected = item == slide;
+                if (string.IsNullOrWhiteSpace(slide.VideoPath))
+                    return;
+
+                var clip = Videos.FirstOrDefault(v =>
+                               string.Equals(v.FilePath, slide.VideoPath, StringComparison.OrdinalIgnoreCase))
+                           ?? new MediaClipViewModel(slide.VideoPath, _ => { });
+                _ = PlayVideoAsync(clip, fromDeck: true);
+                return;
             }
 
-            SelectedSlide = slide;
+            StopVideo();
             try
             {
                 PresentedImage = new Bitmap(slide.ImagePath);
@@ -389,6 +400,49 @@ namespace libvlc_media.ViewModels
 
             StatusMessage = $"Showing {OutputCaption} on preview and projector.";
             RestartAdvanceTimer();
+        }
+
+        public void InsertVideoAt(string videoPath, int index)
+        {
+            if (SelectedDeck is null)
+                return;
+
+            index = Math.Clamp(index, 0, SelectedDeck.Slides.Count);
+            var item = SlideItemViewModel.FromVideo(
+                videoPath,
+                ThumbnailSize,
+                ThumbnailHeight(),
+                PresentSlide);
+            SelectedDeck.Slides.Insert(index, item);
+            ApplyThumbnailSizeToSlides();
+            this.RaisePropertyChanged(nameof(SelectedDeckTitle));
+            this.RaisePropertyChanged(nameof(HasSlides));
+            StatusMessage = $"Inserted {Path.GetFileName(videoPath)} at position {index + 1}. Click it to play.";
+        }
+
+        public void SetDropInsertIndex(int? index)
+        {
+            if (SelectedDeck is null)
+                return;
+
+            var slides = SelectedDeck.Slides;
+            for (var i = 0; i < slides.Count; i++)
+            {
+                slides[i].ShowDropBefore = index == i;
+                slides[i].ShowDropAfter = index == slides.Count && i == slides.Count - 1;
+            }
+        }
+
+        public void ClearDropIndicators()
+        {
+            if (SelectedDeck is null)
+                return;
+
+            foreach (var slide in SelectedDeck.Slides)
+            {
+                slide.ShowDropBefore = false;
+                slide.ShowDropAfter = false;
+            }
         }
 
         public void Dispose()
@@ -452,7 +506,7 @@ namespace libvlc_media.ViewModels
                     var deck = new SlideDeckViewModel(name, pdfPath, cache);
                     foreach (var (path, index) in pages.Select((path, index) => (path, index)))
                     {
-                        deck.Slides.Add(new SlideItemViewModel(
+                        deck.Slides.Add(SlideItemViewModel.FromImage(
                             path,
                             index + 1,
                             ThumbnailSize,
@@ -510,7 +564,7 @@ namespace libvlc_media.ViewModels
                 StatusMessage = "Select an MP4 from the left list, then press Play.";
         }
 
-        private async Task PlayVideoAsync(MediaClipViewModel clip)
+        private async Task PlayVideoAsync(MediaClipViewModel clip, bool fromDeck = false)
         {
             if (_playback is null)
             {
@@ -519,8 +573,12 @@ namespace libvlc_media.ViewModels
             }
 
             SelectedVideo = clip;
-            ClearSlideSelection();
-            SelectedSlide = null;
+            if (!fromDeck)
+            {
+                ClearSlideSelection();
+                SelectedSlide = null;
+            }
+
             PresentedImage = null;
             IsBlanked = false;
             IsVideoActive = true;
@@ -698,6 +756,15 @@ namespace libvlc_media.ViewModels
             {
                 foreach (var slide in deck.Slides)
                     slide.IsSelected = false;
+            }
+        }
+
+        private void SelectOnly(SlideItemViewModel slide)
+        {
+            foreach (var deck in Decks)
+            {
+                foreach (var item in deck.Slides)
+                    item.IsSelected = item == slide;
             }
         }
 
