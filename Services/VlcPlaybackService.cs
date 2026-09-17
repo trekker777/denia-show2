@@ -17,11 +17,13 @@ namespace libvlc_media.Services
             PreviewPlayer = new MediaPlayer(LibVLC)
             {
                 EnableHardwareDecoding = false,
-                Mute = true
+                Mute = false,
+                Volume = 80
             };
             OutputPlayer = new MediaPlayer(LibVLC)
             {
-                EnableHardwareDecoding = false
+                EnableHardwareDecoding = false,
+                Mute = true
             };
         }
 
@@ -121,6 +123,15 @@ namespace libvlc_media.Services
         }
 
         public void SetPreviewMuted(bool muted) => PreviewPlayer.Mute = muted;
+
+        public void ApplyAudio(bool muted, int volume)
+        {
+            var level = Math.Clamp(volume, 0, 100);
+            PreviewPlayer.Mute = muted;
+            PreviewPlayer.Volume = level;
+            OutputPlayer.Mute = true;
+            OutputPlayer.Volume = 0;
+        }
 
         public void Dispose()
         {

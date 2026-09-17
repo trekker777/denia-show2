@@ -353,6 +353,36 @@
                             BorderThickness="1"
                             CornerRadius="6"
                             Padding="10">
+                        <Grid ColumnDefinitions="Auto,*,40" RowDefinitions="Auto,Auto">
+                            <Button Content="{Binding MuteLabel}"
+                                    Command="{Binding ToggleMuteCommand}"
+                                    MinWidth="80"
+                                    Margin="0,0,10,0"/>
+                            <Slider Grid.Column="1"
+                                    Minimum="0"
+                                    Maximum="100"
+                                    Value="{Binding Volume}"
+                                    VerticalAlignment="Center"
+                                    IsSnapToTickEnabled="True"
+                                    TickFrequency="1"/>
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding VolumeLabel}"
+                                       VerticalAlignment="Center"
+                                       HorizontalAlignment="Right"
+                                       Opacity="0.8"/>
+                            <TextBlock Grid.Row="1"
+                                       Grid.ColumnSpan="3"
+                                       Text="Volume for video audio"
+                                       Opacity="0.55"
+                                       FontSize="11"
+                                       Margin="0,6,0,0"/>
+                        </Grid>
+                    </Border>
+
+                    <Border BorderBrush="#333"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="10">
                         <StackPanel Spacing="8">
                             <ToggleSwitch IsChecked="{Binding IsAutoAdvanceEnabled}"
                                           OnContent="Auto-advance on"

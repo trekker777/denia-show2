@@ -39,6 +39,8 @@ namespace libvlc_media.ViewModels
         private decimal _autoAdvanceSeconds = 8;
         private string _statusMessage = "Import a PDF to build a slide deck, or add an MP4 to play on the projector.";
         private VideoRendererOption _selectedVideoRenderer = VideoRenderers[3];
+        private bool _isMuted;
+        private double _volume = 80;
 
         public MainWindowViewModel()
             : this(null)
@@ -73,6 +75,7 @@ namespace libvlc_media.ViewModels
             StopVideoCommand = ReactiveCommand.Create(StopVideo);
             ToggleBlankCommand = ReactiveCommand.Create(ToggleBlank);
             ToggleProjectorCommand = ReactiveCommand.Create(ToggleProjector);
+            ToggleMuteCommand = ReactiveCommand.Create(ToggleMute);
 
             _advanceTimer = new DispatcherTimer();
             _advanceTimer.Tick += (_, _) => GoToNextSlide(stopAtEnd: true);
@@ -131,6 +134,8 @@ namespace libvlc_media.ViewModels
 
         public ICommand ToggleProjectorCommand { get; }
 
+        public ICommand ToggleMuteCommand { get; }
+
         public MediaPlayer? PreviewMediaPlayer => _playback?.PreviewPlayer;
 
         public MediaPlayer? OutputMediaPlayer => _playback?.OutputPlayer;
@@ -148,6 +153,10 @@ namespace libvlc_media.ViewModels
         public bool ShowIdle => !ShowSlide && !ShowVideo && !IsBlanked;
 
         public string PauseLabel => IsPaused ? "Resume" : "Pause";
+
+        public string MuteLabel => IsMuted ? "Unmute" : "Mute";
+
+        public string VolumeLabel => $"{Math.Round(Volume):0}";
 
         public string ProjectorLabel => IsProjectorOpen ? "Close projector" : "Open projector";
 
@@ -266,10 +275,8 @@ namespace libvlc_media.ViewModels
                 {
                     this.RaisePropertyChanged(nameof(ProjectorLabel));
                     if (!value)
-                    {
                         _playback?.StopOutput();
-                        _playback?.SetPreviewMuted(false);
-                    }
+                    ApplyAudio();
                 }
             }
         }
@@ -323,6 +330,32 @@ namespace libvlc_media.ViewModels
             {
                 if (SetAndRaise(ref _isAutoAdvanceEnabled, value))
                     RestartAdvanceTimer();
+            }
+        }
+
+        public bool IsMuted
+        {
+            get => _isMuted;
+            set
+            {
+                if (SetAndRaise(ref _isMuted, value))
+                {
+                    this.RaisePropertyChanged(nameof(MuteLabel));
+                    ApplyAudio();
+                }
+            }
+        }
+
+        public double Volume
+        {
+            get => _volume;
+            set
+            {
+                if (SetAndRaise(ref _volume, Math.Clamp(value, 0, 100)))
+                {
+                    this.RaisePropertyChanged(nameof(VolumeLabel));
+                    ApplyAudio();
+                }
             }
         }
 
@@ -607,15 +640,15 @@ namespace libvlc_media.ViewModels
                 var playingOnProjector = false;
                 if (IsProjectorOpen)
                 {
-                    _playback.SetPreviewMuted(true);
                     if (await VlcPlaybackService.WaitForHostAsync(_playback.OutputPlayer))
                         playingOnProjector = _playback.PlayOutput(clip.FilePath, vout, _playback.PreviewPlayer.Position);
                 }
                 else
                 {
                     _playback.StopOutput();
-                    _playback.SetPreviewMuted(false);
                 }
+
+                ApplyAudio();
 
                 IsPaused = false;
                 IsPlaying = true;
@@ -665,6 +698,11 @@ namespace libvlc_media.ViewModels
         }
 
         private void ToggleBlank() => IsBlanked = !IsBlanked;
+
+        private void ToggleMute() => IsMuted = !IsMuted;
+
+        private void ApplyAudio() =>
+            _playback?.ApplyAudio(IsMuted, (int)Math.Round(Volume));
 
         private void ToggleProjector() => IsProjectorOpen = !IsProjectorOpen;
 
