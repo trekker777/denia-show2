@@ -393,7 +393,7 @@ namespace libvlc_media.ViewModels
             if (_playback is null)
                 return;
 
-            _playback.SetPreviewMuted(true);
+            ApplyAudio();
             if (!IsVideoActive || _playback.CurrentPath is null)
                 return;
 
@@ -692,8 +692,33 @@ namespace libvlc_media.ViewModels
         {
             IsPlaying = false;
             IsPaused = false;
+
+            if (IsAutoAdvanceEnabled
+                && !IsBlanked
+                && SelectedSlide is { IsVideo: true }
+                && SelectedDeck is not null)
+            {
+                var slides = SelectedDeck.Slides;
+                var index = slides.IndexOf(SelectedSlide);
+                if (index >= 0 && index + 1 < slides.Count)
+                {
+                    StatusMessage = "Video finished — advancing.";
+                    PresentSlide(slides[index + 1]);
+                    return;
+                }
+
+                IsAutoAdvanceEnabled = false;
+                FinishEndedVideo("Reached the last slide. Auto-advance is off.");
+                return;
+            }
+
+            FinishEndedVideo("Video finished.");
+        }
+
+        private void FinishEndedVideo(string message)
+        {
             IsVideoActive = false;
-            StatusMessage = "Video finished.";
+            StatusMessage = message;
             NotifyOutputState();
         }
 
