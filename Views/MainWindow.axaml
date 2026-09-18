@@ -265,7 +265,9 @@
                                                            Stretch="Uniform"
                                                            HorizontalAlignment="Stretch"
                                                            VerticalAlignment="Stretch"
-                                                           IsVisible="{Binding !IsVideo}"/>
+                                                           IsVisible="{Binding HasThumbnail}"/>
+                                                    <Border Background="#66000000"
+                                                            IsVisible="{Binding IsVideo}"/>
                                                     <StackPanel IsVisible="{Binding IsVideo}"
                                                                 HorizontalAlignment="Center"
                                                                 VerticalAlignment="Center"
@@ -274,7 +276,7 @@
                                                         <TextBlock Text="▶"
                                                                    FontSize="28"
                                                                    HorizontalAlignment="Center"
-                                                                   Opacity="0.9"/>
+                                                                   Opacity="0.95"/>
                                                         <TextBlock Text="{Binding PageLabel}"
                                                                    FontSize="11"
                                                                    TextAlignment="Center"

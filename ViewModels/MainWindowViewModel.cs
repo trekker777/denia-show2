@@ -20,6 +20,7 @@ namespace libvlc_media.ViewModels
     {
         private readonly VlcPlaybackService? _playback;
         private readonly PdfImportService _pdfImport = new();
+        private readonly VideoThumbnailService _thumbnails = new();
         private readonly List<Bitmap> _retiredImages = new();
         private readonly DispatcherTimer _advanceTimer;
         private readonly DispatcherTimer _videoProgressTimer;
@@ -482,6 +483,48 @@ namespace libvlc_media.ViewModels
             this.RaisePropertyChanged(nameof(SelectedDeckTitle));
             this.RaisePropertyChanged(nameof(HasSlides));
             StatusMessage = $"Inserted {Path.GetFileName(videoPath)} at position {index + 1}. Click it to play.";
+            _ = CaptureVideoThumbnailAsync(item);
+        }
+
+        private async Task CaptureVideoThumbnailAsync(SlideItemViewModel item)
+        {
+            if (!item.IsVideo || string.IsNullOrWhiteSpace(item.VideoPath))
+                return;
+
+            var width = (int)Math.Clamp(ThumbnailSize * 2, 160, 800);
+            var file = await _thumbnails.CaptureToFileAsync(item.VideoPath, width);
+            if (file is null)
+                return;
+
+            try
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (item.IsDisposed)
+                        return;
+
+                    try
+                    {
+                        using var stream = File.OpenRead(file);
+                        item.SetThumbnail(Bitmap.DecodeToWidth(stream, width));
+                    }
+                    catch
+                    {
+                        // Keep the play-icon card if the frame cannot be decoded.
+                    }
+                });
+            }
+            finally
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch
+                {
+                    // Temp cleanup is best-effort.
+                }
+            }
         }
 
         public void InsertImageAt(string imagePath, int index)
@@ -606,6 +649,7 @@ namespace libvlc_media.ViewModels
                 deck.Dispose();
             Decks.Clear();
             SlideCache.ClearAll();
+            _thumbnails.Dispose();
         }
 
         private async Task ImportPdfsAsync()

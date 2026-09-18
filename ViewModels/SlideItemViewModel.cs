@@ -13,6 +13,8 @@ namespace libvlc_media.ViewModels
         private bool _showDropAfter;
         private double _displayWidth;
         private double _displayHeight;
+        private Bitmap? _thumbnail;
+        private bool _isDisposed;
 
         private SlideItemViewModel(
             bool isVideo,
@@ -35,7 +37,7 @@ namespace libvlc_media.ViewModels
                 ImagePath = string.Empty;
                 PageNumber = 0;
                 PageLabel = Path.GetFileName(path);
-                Thumbnail = null;
+                _thumbnail = null;
             }
             else
             {
@@ -43,7 +45,7 @@ namespace libvlc_media.ViewModels
                 VideoPath = null;
                 PageNumber = pageNumber;
                 PageLabel = pageNumber > 0 ? pageNumber.ToString() : Path.GetFileName(path);
-                Thumbnail = LoadThumbnail(path, displayWidth);
+                _thumbnail = LoadThumbnail(path, displayWidth);
             }
         }
 
@@ -74,7 +76,34 @@ namespace libvlc_media.ViewModels
 
         public string PageLabel { get; }
 
-        public Bitmap? Thumbnail { get; }
+        public Bitmap? Thumbnail
+        {
+            get => _thumbnail;
+            private set
+            {
+                var previous = _thumbnail;
+                if (SetAndRaise(ref _thumbnail, value))
+                {
+                    previous?.Dispose();
+                    this.RaisePropertyChanged(nameof(HasThumbnail));
+                }
+            }
+        }
+
+        public bool HasThumbnail => _thumbnail is not null;
+
+        public bool IsDisposed => _isDisposed;
+
+        public void SetThumbnail(Bitmap bitmap)
+        {
+            if (_isDisposed)
+            {
+                bitmap.Dispose();
+                return;
+            }
+
+            Thumbnail = bitmap;
+        }
 
         public ICommand PresentCommand { get; }
 
@@ -110,7 +139,11 @@ namespace libvlc_media.ViewModels
             set => this.RaiseAndSetIfChanged(ref _showDropAfter, value);
         }
 
-        public void Dispose() => Thumbnail?.Dispose();
+        public void Dispose()
+        {
+            _isDisposed = true;
+            Thumbnail = null;
+        }
 
         private static Bitmap? LoadThumbnail(string path, double displayWidth)
         {
