@@ -22,6 +22,7 @@ namespace libvlc_media.ViewModels
         private readonly PdfImportService _pdfImport = new();
         private readonly List<Bitmap> _retiredImages = new();
         private readonly DispatcherTimer _advanceTimer;
+        private readonly DispatcherTimer _videoProgressTimer;
 
         private SlideDeckViewModel? _selectedDeck;
         private SlideItemViewModel? _selectedSlide;
@@ -36,7 +37,10 @@ namespace libvlc_media.ViewModels
         private bool _isPlaying;
         private bool _isPaused;
         private bool _isAutoAdvanceEnabled;
+        private bool _isLoopSlides = true;
         private decimal _autoAdvanceSeconds = 8;
+        private long _videoTimeMs;
+        private long _videoLengthMs;
         private string _statusMessage = "Import a PDF to build a slide deck, or add an MP4 to play on the projector.";
         private VideoRendererOption _selectedVideoRenderer = VideoRenderers[3];
         private bool _isMuted;
@@ -79,6 +83,8 @@ namespace libvlc_media.ViewModels
 
             _advanceTimer = new DispatcherTimer();
             _advanceTimer.Tick += (_, _) => GoToNextSlide(stopAtEnd: true);
+            _videoProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _videoProgressTimer.Tick += (_, _) => UpdateVideoProgress();
 
             if (_playback is not null)
             {
@@ -262,6 +268,7 @@ namespace libvlc_media.ViewModels
                 {
                     NotifyOutputState();
                     RestartAdvanceTimer();
+                    SyncVideoProgressTimer();
                 }
             }
         }
@@ -310,7 +317,11 @@ namespace libvlc_media.ViewModels
         public bool IsPlaying
         {
             get => _isPlaying;
-            private set => this.RaiseAndSetIfChanged(ref _isPlaying, value);
+            private set
+            {
+                if (SetAndRaise(ref _isPlaying, value))
+                    SyncVideoProgressTimer();
+            }
         }
 
         public bool IsPaused
@@ -319,7 +330,10 @@ namespace libvlc_media.ViewModels
             private set
             {
                 if (SetAndRaise(ref _isPaused, value))
+                {
                     this.RaisePropertyChanged(nameof(PauseLabel));
+                    SyncVideoProgressTimer();
+                }
             }
         }
 
@@ -332,6 +346,19 @@ namespace libvlc_media.ViewModels
                     RestartAdvanceTimer();
             }
         }
+
+        public bool IsLoopSlides
+        {
+            get => _isLoopSlides;
+            set => this.RaiseAndSetIfChanged(ref _isLoopSlides, value);
+        }
+
+        public string VideoTimeText => FormatTimestamp(_videoTimeMs);
+
+        public string VideoDurationText => FormatTimestamp(_videoLengthMs);
+
+        public double VideoProgress =>
+            _videoLengthMs > 0 ? Math.Clamp(_videoTimeMs / (double)_videoLengthMs, 0, 1) : 0;
 
         public bool IsMuted
         {
@@ -481,6 +508,7 @@ namespace libvlc_media.ViewModels
         public void Dispose()
         {
             _advanceTimer.Stop();
+            _videoProgressTimer.Stop();
             _playback?.Stop();
             PresentedImage?.Dispose();
             foreach (var image in _retiredImages)
@@ -707,6 +735,13 @@ namespace libvlc_media.ViewModels
                     return;
                 }
 
+                if (IsLoopSlides && slides.Count > 0)
+                {
+                    StatusMessage = "Video finished — looping to the first slide.";
+                    PresentSlide(slides[0]);
+                    return;
+                }
+
                 IsAutoAdvanceEnabled = false;
                 FinishEndedVideo("Reached the last slide. Auto-advance is off.");
                 return;
@@ -774,14 +809,20 @@ namespace libvlc_media.ViewModels
             var next = index + 1;
             if (next >= slides.Count)
             {
-                if (stopAtEnd)
+                if (IsLoopSlides)
+                {
+                    next = 0;
+                }
+                else if (stopAtEnd)
                 {
                     IsAutoAdvanceEnabled = false;
                     StatusMessage = "Reached the last slide. Auto-advance is off.";
                     return;
                 }
-
-                next = 0;
+                else
+                {
+                    next = 0;
+                }
             }
 
             PresentSlide(slides[next]);
@@ -833,6 +874,58 @@ namespace libvlc_media.ViewModels
 
         private SlideDeckViewModel? FindDeck(SlideItemViewModel slide) =>
             Decks.FirstOrDefault(d => d.Slides.Contains(slide));
+
+        private void SyncVideoProgressTimer()
+        {
+            if (IsVideoActive && IsPlaying && !IsPaused)
+            {
+                _videoProgressTimer.Start();
+                UpdateVideoProgress();
+                return;
+            }
+
+            _videoProgressTimer.Stop();
+            if (!IsVideoActive)
+            {
+                _videoTimeMs = 0;
+                _videoLengthMs = 0;
+                RaiseVideoProgress();
+            }
+        }
+
+        private void UpdateVideoProgress()
+        {
+            if (_playback is null || !IsVideoActive)
+                return;
+
+            _videoTimeMs = Math.Max(0, _playback.PreviewPlayer.Time);
+            var length = _playback.PreviewPlayer.Length;
+            if (length > 0)
+                _videoLengthMs = length;
+
+            RaiseVideoProgress();
+        }
+
+        private void RaiseVideoProgress()
+        {
+            this.RaisePropertyChanged(nameof(VideoTimeText));
+            this.RaisePropertyChanged(nameof(VideoDurationText));
+            this.RaisePropertyChanged(nameof(VideoProgress));
+        }
+
+        private static string FormatTimestamp(long milliseconds)
+        {
+            if (milliseconds < 0)
+                milliseconds = 0;
+
+            var totalSeconds = milliseconds / 1000;
+            var minutes = totalSeconds / 60;
+            var seconds = totalSeconds % 60;
+            if (minutes >= 60)
+                return $"{minutes / 60}:{(minutes % 60):00}:{seconds:00}";
+
+            return $"{minutes}:{seconds:00}";
+        }
 
         private void RestartAdvanceTimer()
         {
