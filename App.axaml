@@ -46,5 +46,19 @@
         <Style Selector="Border.slide-card.video">
             <Setter Property="Background" Value="#142033"/>
         </Style>
+
+        <Style Selector="Button.slide-delete">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="CornerRadius" Value="13"/>
+            <Setter Property="Background" Value="#C62828"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.slide-delete:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#E53935"/>
+        </Style>
     </Application.Styles>
 </Application>

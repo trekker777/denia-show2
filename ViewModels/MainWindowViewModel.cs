@@ -69,9 +69,10 @@ namespace libvlc_media.ViewModels
             PickVideoFiles = new Interaction<Unit, IReadOnlyList<string>>();
 
             ImportPdfCommand = ReactiveCommand.CreateFromTask(ImportPdfsAsync);
-            ImportVideoCommand = ReactiveCommand.CreateFromTask(ImportVideosAsync);
+            ImportVideoCommand = ReactiveCommand.CreateFromTask(ImportMediaAsync);
             RemoveSelectedDeckCommand = ReactiveCommand.Create(RemoveSelectedDeck);
             RemoveSelectedVideoCommand = ReactiveCommand.Create(RemoveSelectedVideo);
+            RemoveSelectedSlideCommand = ReactiveCommand.Create(RemoveSelectedSlide);
             NextSlideCommand = ReactiveCommand.Create(() => GoToNextSlide(stopAtEnd: false));
             PreviousSlideCommand = ReactiveCommand.Create(GoToPreviousSlide);
             PlaySelectedVideoCommand = ReactiveCommand.CreateFromTask(PlaySelectedVideoAsync);
@@ -125,6 +126,8 @@ namespace libvlc_media.ViewModels
         public ICommand RemoveSelectedDeckCommand { get; }
 
         public ICommand RemoveSelectedVideoCommand { get; }
+
+        public ICommand RemoveSelectedSlideCommand { get; }
 
         public ICommand NextSlideCommand { get; }
 
@@ -472,12 +475,97 @@ namespace libvlc_media.ViewModels
                 videoPath,
                 ThumbnailSize,
                 ThumbnailHeight(),
-                PresentSlide);
+                PresentSlide,
+                RemoveSlide);
             SelectedDeck.Slides.Insert(index, item);
             ApplyThumbnailSizeToSlides();
             this.RaisePropertyChanged(nameof(SelectedDeckTitle));
             this.RaisePropertyChanged(nameof(HasSlides));
             StatusMessage = $"Inserted {Path.GetFileName(videoPath)} at position {index + 1}. Click it to play.";
+        }
+
+        public void InsertImageAt(string imagePath, int index)
+        {
+            if (SelectedDeck is null)
+                return;
+
+            index = Math.Clamp(index, 0, SelectedDeck.Slides.Count);
+            var item = SlideItemViewModel.FromImage(
+                imagePath,
+                0,
+                ThumbnailSize,
+                ThumbnailHeight(),
+                PresentSlide,
+                RemoveSlide);
+            SelectedDeck.Slides.Insert(index, item);
+            ApplyThumbnailSizeToSlides();
+            this.RaisePropertyChanged(nameof(SelectedDeckTitle));
+            this.RaisePropertyChanged(nameof(HasSlides));
+            StatusMessage = $"Inserted {Path.GetFileName(imagePath)} at position {index + 1}.";
+        }
+
+        public void InsertMediaAt(MediaClipViewModel clip, int index)
+        {
+            if (clip.IsVideo)
+                InsertVideoAt(clip.FilePath, index);
+            else
+                InsertImageAt(clip.FilePath, index);
+        }
+
+        public void MoveSlide(SlideItemViewModel slide, int insertIndex)
+        {
+            if (SelectedDeck is null)
+                return;
+
+            var slides = SelectedDeck.Slides;
+            var from = slides.IndexOf(slide);
+            if (from < 0)
+                return;
+
+            insertIndex = Math.Clamp(insertIndex, 0, slides.Count);
+            if (insertIndex == from || insertIndex == from + 1)
+                return;
+
+            var to = insertIndex > from ? insertIndex - 1 : insertIndex;
+            slides.Move(from, to);
+            StatusMessage = $"Moved to position {to + 1}.";
+        }
+
+        public void RemoveSlide(SlideItemViewModel slide)
+        {
+            var deck = FindDeck(slide);
+            if (deck is null)
+                return;
+
+            var index = deck.Slides.IndexOf(slide);
+            var wasSelected = ReferenceEquals(SelectedSlide, slide);
+
+            if (wasSelected)
+            {
+                if (slide.IsVideo && IsVideoActive)
+                    StopVideo();
+                PresentedImage = null;
+                SelectedSlide = null;
+            }
+
+            deck.Slides.Remove(slide);
+            slide.Dispose();
+            this.RaisePropertyChanged(nameof(SelectedDeckTitle));
+            this.RaisePropertyChanged(nameof(HasSlides));
+
+            if (wasSelected && deck.Slides.Count > 0)
+            {
+                var next = Math.Min(index, deck.Slides.Count - 1);
+                PresentSlide(deck.Slides[next]);
+            }
+            else
+            {
+                NotifyOutputState();
+            }
+
+            StatusMessage = slide.IsVideo
+                ? $"Removed {slide.PageLabel} from the deck."
+                : $"Removed slide {slide.PageLabel} from the deck.";
         }
 
         public void SetDropInsertIndex(int? index)
@@ -572,7 +660,8 @@ namespace libvlc_media.ViewModels
                             index + 1,
                             ThumbnailSize,
                             ThumbnailHeight(),
-                            PresentSlide));
+                            PresentSlide,
+                            RemoveSlide));
                     }
 
                     Decks.Add(deck);
@@ -589,7 +678,7 @@ namespace libvlc_media.ViewModels
             }
         }
 
-        private async Task ImportVideosAsync()
+        private async Task ImportMediaAsync()
         {
             IReadOnlyList<string> files;
             try
@@ -604,25 +693,65 @@ namespace libvlc_media.ViewModels
             if (files.Count == 0)
                 return;
 
+            var added = 0;
             foreach (var path in files)
             {
                 if (Videos.Any(v => string.Equals(v.FilePath, path, StringComparison.OrdinalIgnoreCase)))
                     continue;
 
-                Videos.Add(new MediaClipViewModel(path, clip => _ = PlayVideoAsync(clip)));
+                var extension = Path.GetExtension(path);
+                if (!MediaClipViewModel.IsVideoExtension(extension)
+                    && !MediaClipViewModel.IsImageExtension(extension))
+                    continue;
+
+                Videos.Add(new MediaClipViewModel(path, ActivateMedia));
+                added++;
             }
 
-            StatusMessage = Videos.Count == 1
-                ? "Imported 1 video. Press Play to send it to the preview and projector."
-                : $"Imported videos. {Videos.Count} in the list.";
+            StatusMessage = added == 1
+                ? "Imported 1 media item. Drag it onto the slide grid, or use Play/Show."
+                : $"Imported {added} media items.";
+        }
+
+        private void ActivateMedia(MediaClipViewModel clip)
+        {
+            if (clip.IsVideo)
+                _ = PlayVideoAsync(clip);
+            else
+                PresentMediaImage(clip);
+        }
+
+        private void PresentMediaImage(MediaClipViewModel clip)
+        {
+            ClearSlideSelection();
+            SelectedSlide = null;
+            SelectedVideo = clip;
+            StopVideo();
+            IsBlanked = false;
+            try
+            {
+                PresentedImage = new Bitmap(clip.FilePath);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Could not open {clip.Name}: {ex.Message}";
+                return;
+            }
+
+            StatusMessage = $"Showing {clip.Name} on preview and projector.";
+            RestartAdvanceTimer();
         }
 
         private async Task PlaySelectedVideoAsync()
         {
-            if (SelectedVideo is not null)
-                await PlayVideoAsync(SelectedVideo);
-            else
-                StatusMessage = "Select an MP4 from the left list, then press Play.";
+            if (SelectedVideo is null)
+            {
+                StatusMessage = "Select a media item from the left list, then press Play or Show.";
+                return;
+            }
+
+            ActivateMedia(SelectedVideo);
+            await Task.CompletedTask;
         }
 
         private async Task PlayVideoAsync(MediaClipViewModel clip, bool fromDeck = false)
@@ -783,6 +912,12 @@ namespace libvlc_media.ViewModels
             SelectedDeck = Decks.FirstOrDefault();
             StatusMessage = $"Removed {deck.Name}.";
             NotifyOutputState();
+        }
+
+        private void RemoveSelectedSlide()
+        {
+            if (SelectedSlide is not null)
+                RemoveSlide(SelectedSlide);
         }
 
         private void RemoveSelectedVideo()

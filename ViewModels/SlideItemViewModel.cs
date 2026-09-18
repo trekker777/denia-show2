@@ -20,12 +20,14 @@ namespace libvlc_media.ViewModels
             int pageNumber,
             double displayWidth,
             double displayHeight,
-            Action<SlideItemViewModel> present)
+            Action<SlideItemViewModel> present,
+            Action<SlideItemViewModel> delete)
         {
             IsVideo = isVideo;
             _displayWidth = displayWidth;
             _displayHeight = displayHeight;
             PresentCommand = ReactiveCommand.Create(() => present(this));
+            DeleteCommand = ReactiveCommand.Create(() => delete(this));
 
             if (isVideo)
             {
@@ -40,7 +42,7 @@ namespace libvlc_media.ViewModels
                 ImagePath = path;
                 VideoPath = null;
                 PageNumber = pageNumber;
-                PageLabel = pageNumber.ToString();
+                PageLabel = pageNumber > 0 ? pageNumber.ToString() : Path.GetFileName(path);
                 Thumbnail = LoadThumbnail(path, displayWidth);
             }
         }
@@ -50,15 +52,17 @@ namespace libvlc_media.ViewModels
             int pageNumber,
             double displayWidth,
             double displayHeight,
-            Action<SlideItemViewModel> present) =>
-            new(false, imagePath, pageNumber, displayWidth, displayHeight, present);
+            Action<SlideItemViewModel> present,
+            Action<SlideItemViewModel> delete) =>
+            new(false, imagePath, pageNumber, displayWidth, displayHeight, present, delete);
 
         public static SlideItemViewModel FromVideo(
             string videoPath,
             double displayWidth,
             double displayHeight,
-            Action<SlideItemViewModel> present) =>
-            new(true, videoPath, 0, displayWidth, displayHeight, present);
+            Action<SlideItemViewModel> present,
+            Action<SlideItemViewModel> delete) =>
+            new(true, videoPath, 0, displayWidth, displayHeight, present, delete);
 
         public bool IsVideo { get; }
 
@@ -73,6 +77,8 @@ namespace libvlc_media.ViewModels
         public Bitmap? Thumbnail { get; }
 
         public ICommand PresentCommand { get; }
+
+        public ICommand DeleteCommand { get; }
 
         public double DisplayWidth
         {

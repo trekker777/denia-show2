@@ -24,7 +24,9 @@ namespace libvlc_media.Views
         private OutputWindow? _output;
         private bool _syncingProjector;
         private MediaClipViewModel? _pendingVideo;
+        private SlideItemViewModel? _pendingSlide;
         private bool _isDraggingVideo;
+        private bool _isDraggingSlide;
         private Point _dragStart;
         private IPointer? _dragPointer;
 
@@ -34,6 +36,11 @@ namespace libvlc_media.Views
             VideoList.AddHandler(
                 PointerPressedEvent,
                 OnVideoListPointerPressed,
+                RoutingStrategies.Tunnel,
+                handledEventsToo: true);
+            SlideGrid.AddHandler(
+                PointerPressedEvent,
+                OnSlideGridPointerPressed,
                 RoutingStrategies.Tunnel,
                 handledEventsToo: true);
             AddHandler(PointerMovedEvent, OnDragPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -185,35 +192,71 @@ namespace libvlc_media.Views
                 return;
 
             _pendingVideo = clip;
+            _pendingSlide = null;
             _isDraggingVideo = false;
+            _isDraggingSlide = false;
             _dragStart = e.GetPosition(this);
             _dragPointer = e.Pointer;
             ViewModel.SelectedVideo = clip;
             e.Pointer.Capture(this);
         }
 
+        private void OnSlideGridPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (ViewModel is null || IsPlayButton(e.Source))
+                return;
+
+            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                return;
+
+            var slide = FindDataContext<SlideItemViewModel>(e.Source);
+            if (slide is null)
+                return;
+
+            _pendingSlide = slide;
+            _pendingVideo = null;
+            _isDraggingSlide = false;
+            _isDraggingVideo = false;
+            _dragStart = e.GetPosition(this);
+            _dragPointer = e.Pointer;
+            e.Pointer.Capture(this);
+        }
+
         private void OnDragPointerMoved(object? sender, PointerEventArgs e)
         {
-            if (_pendingVideo is null || _dragPointer is null)
+            if (_dragPointer is null || (_pendingVideo is null && _pendingSlide is null))
                 return;
 
             if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             {
-                EndVideoDrag();
+                EndDrag();
                 return;
             }
 
             var position = e.GetPosition(this);
-            if (!_isDraggingVideo)
+            var dragging = _isDraggingVideo || _isDraggingSlide;
+            if (!dragging)
             {
                 var delta = position - _dragStart;
                 if (Math.Abs(delta.X) < DragThreshold && Math.Abs(delta.Y) < DragThreshold)
                     return;
 
-                _isDraggingVideo = true;
-                DragGhostText.Text = _pendingVideo.Name;
+                if (_pendingVideo is not null)
+                {
+                    _isDraggingVideo = true;
+                    DragGhostText.Text = _pendingVideo.Name;
+                    Cursor = new Cursor(StandardCursorType.DragCopy);
+                }
+                else if (_pendingSlide is not null)
+                {
+                    _isDraggingSlide = true;
+                    DragGhostText.Text = _pendingSlide.IsVideo
+                        ? _pendingSlide.PageLabel
+                        : $"Slide {_pendingSlide.PageLabel}";
+                    Cursor = new Cursor(StandardCursorType.DragMove);
+                }
+
                 DragGhost.IsVisible = true;
-                Cursor = new Cursor(StandardCursorType.DragCopy);
             }
 
             Canvas.SetLeft(DragGhost, position.X + 14);
@@ -227,29 +270,43 @@ namespace libvlc_media.Views
 
         private void OnDragPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
-            if (_pendingVideo is null)
-                return;
-
             var clip = _pendingVideo;
-            var wasDragging = _isDraggingVideo;
+            var slide = _pendingSlide;
+            var wasDraggingVideo = _isDraggingVideo;
+            var wasDraggingSlide = _isDraggingSlide;
             var position = e.GetPosition(this);
-            EndVideoDrag();
+            EndDrag();
 
-            if (!wasDragging || ViewModel?.SelectedDeck is null || !IsOverSlideDropTarget(position))
+            if (ViewModel?.SelectedDeck is null)
                 return;
 
-            ViewModel.InsertVideoAt(clip.FilePath, GetInsertIndex(position));
+            if (wasDraggingVideo && clip is not null && IsOverSlideDropTarget(position))
+            {
+                ViewModel.InsertMediaAt(clip, GetInsertIndex(position));
+                return;
+            }
+
+            if (wasDraggingSlide && slide is not null && IsOverSlideDropTarget(position))
+            {
+                ViewModel.MoveSlide(slide, GetInsertIndex(position));
+                return;
+            }
+
+            if (!wasDraggingSlide && !wasDraggingVideo && slide is not null)
+                ViewModel.PresentSlide(slide);
         }
 
-        private void OnDragCaptureLost(object? sender, PointerCaptureLostEventArgs e) => EndVideoDrag();
+        private void OnDragCaptureLost(object? sender, PointerCaptureLostEventArgs e) => EndDrag();
 
-        private void EndVideoDrag()
+        private void EndDrag()
         {
             if (_dragPointer is not null && ReferenceEquals(_dragPointer.Captured, this))
                 _dragPointer.Capture(null);
 
             _pendingVideo = null;
+            _pendingSlide = null;
             _isDraggingVideo = false;
+            _isDraggingSlide = false;
             _dragPointer = null;
             DragGhost.IsVisible = false;
             Cursor = Cursor.Default;
@@ -338,15 +395,13 @@ namespace libvlc_media.Views
         {
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = "Import videos",
+                Title = "Import media",
                 AllowMultiple = true,
                 FileTypeFilter =
                 [
+                    new FilePickerFileType("Media") { Patterns = ["*.mp4", "*.png"] },
                     new FilePickerFileType("MP4 video") { Patterns = ["*.mp4"] },
-                    new FilePickerFileType("Other video")
-                    {
-                        Patterns = ["*.mp4", "*.mov", "*.mkv", "*.webm", "*.avi"]
-                    }
+                    new FilePickerFileType("PNG image") { Patterns = ["*.png"] }
                 ]
             });
 
