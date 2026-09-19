@@ -215,7 +215,7 @@
                                    Opacity="0.75"/>
                         <Slider Width="160"
                                 Minimum="110"
-                                Maximum="360"
+                                Maximum="470"
                                 Value="{Binding ThumbnailSize}"/>
                     </StackPanel>
                 </Grid>
