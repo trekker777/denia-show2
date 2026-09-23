@@ -13,17 +13,19 @@ namespace libvlc_media.Services
         public VlcPlaybackService()
         {
             Core.Initialize();
-            LibVLC = new LibVLC("--no-osd", "--quiet", "--no-video-title-show");
+            LibVLC = new LibVLC("--no-osd", "--quiet", "--no-video-title-show", "--autoscale");
             PreviewPlayer = new MediaPlayer(LibVLC)
             {
                 EnableHardwareDecoding = false,
                 Mute = false,
-                Volume = 80
+                Volume = 80,
+                Scale = 0
             };
             OutputPlayer = new MediaPlayer(LibVLC)
             {
                 EnableHardwareDecoding = false,
-                Mute = true
+                Mute = true,
+                Scale = 0
             };
         }
 
@@ -69,6 +71,7 @@ namespace libvlc_media.Services
                 return false;
 
             _previewMedia = CreateMedia(path, voutModule);
+            PreviewPlayer.Scale = 0;
             return PreviewPlayer.Play(_previewMedia);
         }
 
@@ -80,6 +83,7 @@ namespace libvlc_media.Services
                 return false;
 
             _outputMedia = CreateMedia(path, voutModule);
+            OutputPlayer.Scale = 0;
             var started = OutputPlayer.Play(_outputMedia);
             if (started && position > 0f)
                 OutputPlayer.Position = position;
@@ -89,6 +93,7 @@ namespace libvlc_media.Services
         private Media CreateMedia(string path, string? voutModule)
         {
             var media = new Media(LibVLC, path, FromType.FromPath);
+            media.AddOption(":autoscale");
             if (!string.IsNullOrWhiteSpace(voutModule))
                 media.AddOption($":vout={voutModule}");
             return media;

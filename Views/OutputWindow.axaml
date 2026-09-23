@@ -6,17 +6,23 @@
         x:DataType="vm:MainWindowViewModel"
         Title="Projector"
         Background="Black"
-        Width="1280"
-        Height="720"
+        Width="1920"
+        Height="1080"
+        CanResize="False"
+        ClipToBounds="True"
+        UseLayoutRounding="True"
         WindowStartupLocation="Manual"
         WindowDecorations="None"
         ShowInTaskbar="False"
         ShowActivated="False"
         Topmost="True">
 
-    <Panel Background="Black">
+    <Panel Background="Black" ClipToBounds="True">
         <Image Source="{Binding PresentedImage}"
                Stretch="Uniform"
+               StretchDirection="Both"
+               HorizontalAlignment="Stretch"
+               VerticalAlignment="Stretch"
                IsVisible="{Binding ShowSlide}"/>
 
         <Border Background="Black" IsVisible="{Binding IsBlanked}"/>

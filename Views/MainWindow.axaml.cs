@@ -2,7 +2,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using libvlc_media.Models;
 using libvlc_media.ViewModels;
@@ -13,6 +15,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
 namespace libvlc_media.Views
@@ -23,6 +26,7 @@ namespace libvlc_media.Views
 
         private OutputWindow? _output;
         private bool _syncingProjector;
+        private bool _fittingProjector;
         private MediaClipViewModel? _pendingVideo;
         private SlideItemViewModel? _pendingSlide;
         private bool _isDraggingVideo;
@@ -82,6 +86,7 @@ namespace libvlc_media.Views
             {
                 var screen = screens[i];
                 var bounds = screen.Bounds;
+                var scaling = screen.Scaling > 0 ? screen.Scaling : 1.0;
                 var label = string.IsNullOrWhiteSpace(screen.DisplayName)
                     ? $"Display {i + 1}"
                     : screen.DisplayName!;
@@ -95,6 +100,7 @@ namespace libvlc_media.Views
                     Y = bounds.Y,
                     Width = bounds.Width,
                     Height = bounds.Height,
+                    Scaling = scaling,
                     IsPrimary = screen.IsPrimary
                 });
             }
@@ -126,7 +132,8 @@ namespace libvlc_media.Views
                         DataContext = ViewModel
                     };
                     _output.Closed += OnOutputClosed;
-                    _output.Opened += (_, _) => ViewModel?.OnProjectorSurfaceReady();
+                    _output.Opened += OnProjectorOpened;
+                    _output.ScalingChanged += OnProjectorScalingChanged;
                     PlaceOnDisplay(_output, ViewModel.SelectedDisplay);
                 }
                 else
@@ -144,7 +151,11 @@ namespace libvlc_media.Views
         private void OnOutputClosed(object? sender, EventArgs e)
         {
             if (_output is not null)
+            {
                 _output.Closed -= OnOutputClosed;
+                _output.Opened -= OnProjectorOpened;
+                _output.ScalingChanged -= OnProjectorScalingChanged;
+            }
 
             _output = null;
             if (ViewModel is { IsProjectorOpen: true })
@@ -159,25 +170,213 @@ namespace libvlc_media.Views
             var window = _output;
             _output = null;
             window.Closed -= OnOutputClosed;
+            window.Opened -= OnProjectorOpened;
+            window.ScalingChanged -= OnProjectorScalingChanged;
             window.Close();
         }
 
-        private static void PlaceOnDisplay(Window window, DisplayInfo? display)
+        private void OnProjectorOpened(object? sender, EventArgs e)
+        {
+            FitProjectorToDisplay();
+            Dispatcher.UIThread.Post(() =>
+            {
+                FitProjectorToDisplay();
+                ViewModel?.OnProjectorSurfaceReady();
+            }, DispatcherPriority.Loaded);
+        }
+
+        private void OnProjectorScalingChanged(object? sender, EventArgs e)
+        {
+            // DPI updates after the window lands on the projector. If we are already
+            // fitting, wait until this pass finishes so we size with the new scale.
+            if (_fittingProjector)
+            {
+                Dispatcher.UIThread.Post(FitProjectorToDisplay, DispatcherPriority.Loaded);
+                return;
+            }
+
+            FitProjectorToDisplay();
+        }
+
+        private void FitProjectorToDisplay()
+        {
+            if (_output is null || _fittingProjector)
+                return;
+
+            _fittingProjector = true;
+            try
+            {
+                PlaceOnDisplay(_output, ViewModel?.SelectedDisplay);
+            }
+            finally
+            {
+                _fittingProjector = false;
+            }
+        }
+
+        private void PlaceOnDisplay(Window window, DisplayInfo? display)
         {
             window.WindowStartupLocation = WindowStartupLocation.Manual;
             window.WindowState = WindowState.Normal;
+            window.WindowDecorations = WindowDecorations.None;
+            window.CanResize = false;
+            window.Topmost = true;
 
-            if (display is not null)
-                window.Position = new PixelPoint(display.X, display.Y);
+            var screen = FindScreen(window, display);
+            var bounds = screen?.Bounds
+                         ?? (display is null
+                             ? (PixelRect?)null
+                             : new PixelRect(display.X, display.Y, display.Width, display.Height));
+
+            if (bounds is null)
+            {
+                if (!window.IsVisible)
+                    window.Show();
+                window.WindowState = WindowState.FullScreen;
+                return;
+            }
+
+            var pixelBounds = bounds.Value;
+            window.Position = pixelBounds.Position;
 
             if (!window.IsVisible)
                 window.Show();
 
-            if (display is not null)
-                window.Position = new PixelPoint(display.X, display.Y);
+            window.Position = pixelBounds.Position;
 
-            window.WindowState = WindowState.FullScreen;
+            // DIP size must use the window's *current* scale. FullScreen on display 2
+            // often keeps the PC's DPI, so a 1920×1080 projector is opened at
+            // 1920×1.5 by 1080×1.5 physical pixels and the picture overruns the edge.
+            var scaling = ResolveScaling(window, screen, display, pixelBounds);
+            var dipWidth = pixelBounds.Width / scaling;
+            var dipHeight = pixelBounds.Height / scaling;
+
+            if (WindowMatchesDisplay(window, pixelBounds, dipWidth, dipHeight))
+            {
+                PinWindowToPixels(window, pixelBounds);
+                return;
+            }
+
+            window.MinWidth = 0;
+            window.MaxWidth = double.PositiveInfinity;
+            window.MinHeight = 0;
+            window.MaxHeight = double.PositiveInfinity;
+            window.Width = dipWidth;
+            window.Height = dipHeight;
+            window.MinWidth = dipWidth;
+            window.MaxWidth = dipWidth;
+            window.MinHeight = dipHeight;
+            window.MaxHeight = dipHeight;
+
+            PinWindowToPixels(window, pixelBounds);
         }
+
+        private Screen? FindScreen(Window window, DisplayInfo? display)
+        {
+            var screens = window.Screens.All.Count > 0 ? window.Screens.All : Screens.All;
+            if (screens.Count == 0)
+                return null;
+
+            if (display is null)
+                return ScreenOf(window) ?? screens[0];
+
+            foreach (var candidate in screens)
+            {
+                var b = candidate.Bounds;
+                if (b.X == display.X && b.Y == display.Y
+                    && b.Width == display.Width && b.Height == display.Height)
+                    return candidate;
+            }
+
+            if (display.Index >= 0 && display.Index < screens.Count)
+                return screens[display.Index];
+
+            return window.Screens.ScreenFromPoint(new PixelPoint(display.X + 1, display.Y + 1));
+        }
+
+        private static Screen? ScreenOf(Window window)
+        {
+            try
+            {
+                return window.Screens.ScreenFromWindow(window);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static double ResolveScaling(
+            Window window,
+            Screen? screen,
+            DisplayInfo? display,
+            PixelRect bounds)
+        {
+            if (window.RenderScaling > 0)
+            {
+                var current = ScreenOf(window);
+                if (current is not null && current.Bounds.Position == bounds.Position)
+                    return window.RenderScaling;
+            }
+
+            if (screen is not null && screen.Scaling > 0)
+                return screen.Scaling;
+
+            if (display is not null && display.Scaling > 0)
+                return display.Scaling;
+
+            return window.RenderScaling > 0 ? window.RenderScaling : 1;
+        }
+
+        private static bool WindowMatchesDisplay(
+            Window window,
+            PixelRect bounds,
+            double dipWidth,
+            double dipHeight)
+        {
+            const double tolerance = 2;
+            var physicalWidth = window.ClientSize.Width * window.RenderScaling;
+            var physicalHeight = window.ClientSize.Height * window.RenderScaling;
+            return window.Position == bounds.Position
+                   && Math.Abs(physicalWidth - bounds.Width) < tolerance
+                   && Math.Abs(physicalHeight - bounds.Height) < tolerance
+                   && Math.Abs(window.Width - dipWidth) < tolerance
+                   && Math.Abs(window.Height - dipHeight) < tolerance;
+        }
+
+        private static void PinWindowToPixels(Window window, PixelRect bounds)
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+
+            var hwnd = window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            if (hwnd == IntPtr.Zero)
+                return;
+
+            SetWindowPos(
+                hwnd,
+                HwndTopmost,
+                bounds.X,
+                bounds.Y,
+                bounds.Width,
+                bounds.Height,
+                SwpNoActivate | SwpShowWindow | SwpFrameChanged);
+        }
+
+        private static readonly IntPtr HwndTopmost = new(-1);
+        private const uint SwpNoActivate = 0x0010;
+        private const uint SwpShowWindow = 0x0040;
+        private const uint SwpFrameChanged = 0x0020;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(
+            IntPtr hWnd,
+            IntPtr hWndInsertAfter,
+            int x,
+            int y,
+            int cx,
+            int cy,
+            uint uFlags);
 
         private void OnVideoListPointerPressed(object? sender, PointerPressedEventArgs e)
         {

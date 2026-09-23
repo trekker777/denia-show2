@@ -491,7 +491,7 @@ namespace libvlc_media.ViewModels
             if (!item.IsVideo || string.IsNullOrWhiteSpace(item.VideoPath))
                 return;
 
-            var width = (int)Math.Clamp(ThumbnailSize * 2, 160, 800);
+            var width = (int)Math.Clamp(ThumbnailSize * 2.3, 160, 1000);
             var file = await _thumbnails.CaptureToFileAsync(item.VideoPath, width);
             if (file is null)
                 return;

@@ -63,8 +63,15 @@ namespace libvlc_media.Controls
         protected override Size MeasureOverride(Size availableSize) =>
             NativeVisible ? availableSize : default;
 
-        protected override Size ArrangeOverride(Size finalSize) =>
-            NativeVisible ? base.ArrangeOverride(finalSize) : default;
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            if (!NativeVisible)
+                return default;
+
+            var arranged = base.ArrangeOverride(finalSize);
+            SyncNativeSize(arranged);
+            return arranged;
+        }
 
         protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
         {
@@ -116,16 +123,38 @@ namespace libvlc_media.Controls
             if (NativeVisible)
             {
                 ShowWindow(hwnd, SwShow);
+                SyncNativeSize(Bounds.Size);
             }
             else
             {
                 ShowWindow(hwnd, SwHide);
-                SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SwpNoZOrder | SwpNoActivate);
+                SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SwpNoZOrder | SwpNoActivate | SwpNoMove);
             }
+        }
+
+        private void SyncNativeSize(Size dipSize)
+        {
+            if (!OperatingSystem.IsWindows() || _platformHandle is null || !NativeVisible)
+                return;
+
+            var scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+            if (scaling <= 0)
+                scaling = 1.0;
+            var cx = Math.Max(0, (int)Math.Round(dipSize.Width * scaling));
+            var cy = Math.Max(0, (int)Math.Round(dipSize.Height * scaling));
+            SetWindowPos(
+                _platformHandle.Handle,
+                IntPtr.Zero,
+                0,
+                0,
+                cx,
+                cy,
+                SwpNoZOrder | SwpNoActivate | SwpNoMove);
         }
 
         private const int SwHide = 0;
         private const int SwShow = 5;
+        private const uint SwpNoMove = 0x0002;
         private const uint SwpNoZOrder = 0x0004;
         private const uint SwpNoActivate = 0x0010;
 
