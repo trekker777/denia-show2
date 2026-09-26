@@ -29,7 +29,7 @@
 
         <controls:VlcVideoHost MediaPlayer="{Binding OutputMediaPlayer}"
                                NativeVisible="{Binding ShowVideo}"
-                               IsVisible="{Binding ShowVideo}"
+                               IsVisible="{Binding IsVideoActive}"
                                HorizontalAlignment="Stretch"
                                VerticalAlignment="Stretch"/>
     </Panel>

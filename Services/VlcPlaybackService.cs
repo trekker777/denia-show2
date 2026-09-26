@@ -58,8 +58,46 @@ namespace libvlc_media.Services
             if (!HasVideoHost(player))
                 return false;
 
-            await Task.Delay(30);
+            await Task.Delay(16);
             return HasVideoHost(player);
+        }
+
+        public async Task<bool> WaitUntilVideoReadyAsync(MediaPlayer player, int timeoutMs = 1500)
+        {
+            if (player.IsPlaying && player.Time > 0)
+                return true;
+
+            var ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            void OnPlaying(object? sender, EventArgs e) => ready.TrySetResult(true);
+            void OnVout(object? sender, MediaPlayerVoutEventArgs e)
+            {
+                if (e.Count > 0)
+                    ready.TrySetResult(true);
+            }
+
+            player.Playing += OnPlaying;
+            player.Vout += OnVout;
+            try
+            {
+                if (player.IsPlaying)
+                    ready.TrySetResult(true);
+
+                var finished = await Task.WhenAny(ready.Task, Task.Delay(timeoutMs));
+                if (finished != ready.Task)
+                    return player.IsPlaying;
+
+                var start = Environment.TickCount64;
+                while (player.Time <= 0 && Environment.TickCount64 - start < 120)
+                    await Task.Delay(16);
+
+                return true;
+            }
+            finally
+            {
+                player.Playing -= OnPlaying;
+                player.Vout -= OnVout;
+            }
         }
 
         public bool PlayPreview(string path, string? voutModule = null)

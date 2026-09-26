@@ -32,6 +32,8 @@ namespace libvlc_media.ViewModels
         private Bitmap? _presentedImage;
         private double _thumbnailSize = 180;
         private bool _isVideoActive;
+        private bool _isVideoSurfaceReady;
+        private int _playGeneration;
         private bool _isProjectorOpen;
         private bool _isBlanked;
         private bool _isBusy;
@@ -156,9 +158,9 @@ namespace libvlc_media.ViewModels
 
         public bool HasSlides => SelectedDeck is { Slides.Count: > 0 };
 
-        public bool ShowSlide => PresentedImage is not null && !IsVideoActive && !IsBlanked;
+        public bool ShowSlide => PresentedImage is not null && !IsVideoSurfaceReady && !IsBlanked;
 
-        public bool ShowVideo => IsVideoActive && !IsBlanked;
+        public bool ShowVideo => IsVideoSurfaceReady && !IsBlanked;
 
         public bool ShowIdle => !ShowSlide && !ShowVideo && !IsBlanked;
 
@@ -270,10 +272,22 @@ namespace libvlc_media.ViewModels
             {
                 if (SetAndRaise(ref _isVideoActive, value))
                 {
+                    if (!value)
+                        IsVideoSurfaceReady = false;
                     NotifyOutputState();
                     RestartAdvanceTimer();
                     SyncVideoProgressTimer();
                 }
+            }
+        }
+
+        public bool IsVideoSurfaceReady
+        {
+            get => _isVideoSurfaceReady;
+            private set
+            {
+                if (SetAndRaise(ref _isVideoSurfaceReady, value))
+                    NotifyOutputState();
             }
         }
 
@@ -813,10 +827,12 @@ namespace libvlc_media.ViewModels
                 SelectedSlide = null;
             }
 
-            PresentedImage = null;
             IsBlanked = false;
+            IsVideoSurfaceReady = false;
             IsVideoActive = true;
             NotifyOutputState();
+
+            var generation = ++_playGeneration;
 
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Loaded);
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Render);
@@ -825,7 +841,8 @@ namespace libvlc_media.ViewModels
             {
                 if (!await VlcPlaybackService.WaitForHostAsync(_playback.PreviewPlayer, 4000))
                 {
-                    IsVideoActive = false;
+                    if (generation == _playGeneration)
+                        IsVideoActive = false;
                     StatusMessage = "Preview surface is not ready. The VLC window handle never attached — try another video renderer.";
                     return;
                 }
@@ -833,7 +850,8 @@ namespace libvlc_media.ViewModels
                 var vout = SelectedVideoRenderer.Module;
                 if (!_playback.PlayPreview(clip.FilePath, vout))
                 {
-                    IsVideoActive = false;
+                    if (generation == _playGeneration)
+                        IsVideoActive = false;
                     StatusMessage = "Could not start video on the preview panel.";
                     return;
                 }
@@ -850,17 +868,25 @@ namespace libvlc_media.ViewModels
                 }
 
                 ApplyAudio();
+                await _playback.WaitUntilVideoReadyAsync(_playback.PreviewPlayer);
+
+                if (generation != _playGeneration)
+                    return;
 
                 IsPaused = false;
                 IsPlaying = true;
+                IsVideoSurfaceReady = true;
                 StatusMessage = playingOnProjector
                     ? $"Playing {clip.Name} on preview and projector ({SelectedVideoRenderer.Name})."
                     : $"Playing {clip.Name} on the preview panel ({SelectedVideoRenderer.Name}).";
             }
             catch (Exception ex)
             {
-                IsVideoActive = false;
-                IsPlaying = false;
+                if (generation == _playGeneration)
+                {
+                    IsVideoActive = false;
+                    IsPlaying = false;
+                }
                 StatusMessage = $"Could not play {clip.Name}: {ex.Message}";
             }
         }
@@ -877,9 +903,11 @@ namespace libvlc_media.ViewModels
 
         private void StopVideo()
         {
+            _playGeneration++;
             _playback?.Stop();
             IsPlaying = false;
             IsPaused = false;
+            IsVideoSurfaceReady = false;
             if (IsVideoActive)
             {
                 IsVideoActive = false;

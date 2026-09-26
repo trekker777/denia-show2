@@ -215,7 +215,7 @@
                                    Opacity="0.75"/>
                         <Slider Width="160"
                                 Minimum="110"
-                                Maximum="470"
+                                Maximum="705"
                                 Value="{Binding ThumbnailSize}"/>
                     </StackPanel>
                 </Grid>
@@ -423,7 +423,7 @@
                         Padding="8,8"
                         Background="#141414"
                         CornerRadius="6"
-                        IsVisible="{Binding ShowVideo}">
+                        IsVisible="{Binding IsVideoActive}">
                     <Grid ColumnDefinitions="Auto,*,Auto">
                         <TextBlock Text="{Binding VideoTimeText}"
                                    FontFamily="Consolas, Cascadia Mono, Courier New"
@@ -471,7 +471,7 @@
 
                         <controls:VlcVideoHost MediaPlayer="{Binding PreviewMediaPlayer}"
                                                NativeVisible="{Binding ShowVideo}"
-                                               IsVisible="{Binding ShowVideo}"
+                                               IsVisible="{Binding IsVideoActive}"
                                                HorizontalAlignment="Stretch"
                                                VerticalAlignment="Stretch"/>
                     </Grid>
