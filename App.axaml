@@ -37,11 +37,11 @@
             <Setter Property="BorderBrush" Value="#777"/>
         </Style>
         <Style Selector="Border.slide-card.selected">
-            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="BorderBrush" Value="#e53935"/>
             <Setter Property="BorderThickness" Value="3"/>
         </Style>
         <Style Selector="Border.slide-card.selected:pointerover">
-            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="BorderBrush" Value="#e53935"/>
         </Style>
         <Style Selector="Border.slide-card.video">
             <Setter Property="Background" Value="#142033"/>

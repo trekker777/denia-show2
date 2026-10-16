@@ -334,6 +334,19 @@
                                                                    FontSize="11"
                                                                    FontWeight="SemiBold"/>
                                                     </Border>
+                                                    <Border Background="#e53935"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Top"
+                                                            Margin="6"
+                                                            CornerRadius="4"
+                                                            Padding="7,2"
+                                                            IsVisible="{Binding IsSelected}">
+                                                        <TextBlock Text="LIVE"
+                                                                   FontSize="11"
+                                                                   FontWeight="ExtraBold"
+                                                                   Foreground="White"
+                                                                   LetterSpacing="0.4"/>
+                                                    </Border>
                                                 </Grid>
                                             </Border>
                                           <!-- Disable the slide-delete for now, only allow a delete using the delete key on the keyboard-->
