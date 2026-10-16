@@ -134,6 +134,8 @@
       border-radius: 10px;
       overflow: hidden;
       aspect-ratio: 16 / 9;
+      scroll-margin-top: 12px;
+      scroll-margin-bottom: calc(92px + env(safe-area-inset-bottom));
     }
     .slide.live { border-color: var(--live); }
     .slide img {
@@ -250,6 +252,7 @@
     let state = { decks: [], selectedDeckIndex: -1, selectedSlideIndex: -1, liveDeckIndex: -1, liveSlideIndex: -1, blanked: false, outputCaption: "" };
     let ws = null;
     let retryMs = 500;
+    let lastLiveKey = "";
 
     function setConn(ok, text) {
       connEl.textContent = text;
@@ -296,10 +299,15 @@
         return;
       }
       emptyEl.hidden = true;
+      let liveCard = null;
+      const liveKey = state.selectedDeckIndex + ":" + state.liveDeckIndex + ":" + state.liveSlideIndex;
+      const shouldScroll = liveKey !== lastLiveKey;
+      lastLiveKey = liveKey;
       deck.slides.forEach((slide) => {
         const card = document.createElement("button");
         const isLive = deck.index === state.liveDeckIndex && slide.index === state.liveSlideIndex;
         card.className = "slide" + (isLive ? " live" : "");
+        if (isLive) liveCard = card;
         card.type = "button";
         if (slide.hasThumb) {
           const img = document.createElement("img");
@@ -332,6 +340,11 @@
         }));
         gridEl.appendChild(card);
       });
+      if (shouldScroll && liveCard) {
+        requestAnimationFrame(() => {
+          liveCard.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        });
+      }
     }
 
     function applyState(next) {
@@ -374,6 +387,10 @@
         btn.classList.toggle("active", btn.getAttribute("data-density") === density);
       });
       try { localStorage.setItem(DENSITY_KEY, density); } catch {}
+      requestAnimationFrame(() => {
+        const live = gridEl.querySelector(".slide.live");
+        if (live) live.scrollIntoView({ block: "nearest", inline: "nearest" });
+      });
     }
 
     document.getElementById("density").addEventListener("click", (ev) => {

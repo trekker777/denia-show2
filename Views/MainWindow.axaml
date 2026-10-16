@@ -271,7 +271,8 @@
                                Margin="40"
                                IsVisible="{Binding !HasSlides}"/>
 
-                    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                    <ScrollViewer x:Name="SlideScroller"
+                                  HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto"
                                   IsVisible="{Binding HasSlides}">
                         <ItemsControl x:Name="SlideGrid"

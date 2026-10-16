@@ -69,10 +69,33 @@ namespace libvlc_media.Views
                         if (ViewModel.IsProjectorOpen)
                             SyncProjector();
                     }));
+                disposables.Add(ViewModel.WhenAnyValue(x => x.SelectedSlide, x => x.SelectedDeck)
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(_ => QueueScrollLiveSlideIntoView()));
             });
 
             Opened += (_, _) => RefreshDisplays();
             Closed += (_, _) => CloseProjectorWindow();
+        }
+
+        private void QueueScrollLiveSlideIntoView() =>
+            Dispatcher.UIThread.Post(ScrollLiveSlideIntoView, DispatcherPriority.Loaded);
+
+        private void ScrollLiveSlideIntoView()
+        {
+            var slide = ViewModel?.SelectedSlide;
+            if (slide is null || ViewModel?.SelectedDeck is null || !ViewModel.SelectedDeck.Slides.Contains(slide))
+                return;
+
+            var container = SlideGrid.ContainerFromItem(slide)
+                            ?? SlideGrid.GetVisualDescendants()
+                                .OfType<Control>()
+                                .FirstOrDefault(c => c.DataContext == slide && c.Classes.Contains("slide-card"));
+            if (container is null)
+                return;
+
+            var bounds = container.Bounds;
+            container.BringIntoView(new Rect(-12, -12, bounds.Width + 24, bounds.Height + 24));
         }
 
         private void RefreshDisplays()
