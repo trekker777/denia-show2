@@ -2,6 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>libvlc_media</RootNamespace>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
@@ -10,6 +11,7 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+    <EmbeddedResource Include="RemoteWeb\index.html" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,6 +26,7 @@
     <PackageReference Include="LibVLCSharp" Version="3.10.1" />
     <PackageReference Include="LibVLCSharp.Avalonia" Version="3.10.1" />
     <PackageReference Include="PDFtoImage" Version="5.4.0" />
+    <PackageReference Include="QRCoder" Version="1.6.0" />
     <PackageReference Include="ReactiveUI.Avalonia" Version="11.3.8" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23.1" />
   </ItemGroup>

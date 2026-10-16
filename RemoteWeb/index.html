@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#111111">
+  <title>Slide Remote</title>
+  <style>
+    :root {
+      --bg: #111;
+      --panel: #1a1a1a;
+      --line: #333;
+      --text: #f2f2f2;
+      --muted: #9a9a9a;
+      --live: #e53935;
+      --accent: #4fc3f7;
+      --grid-min: 168px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      user-select: none;
+    }
+    body {
+      padding: 12px 12px calc(92px + env(safe-area-inset-bottom));
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .title { font-size: 20px; font-weight: 700; }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #666;
+    }
+    .dot.on { background: #43a047; }
+    .dot.off { background: #e53935; }
+    .banner {
+      background: #3e2723;
+      border: 1px solid #6d4c41;
+      color: #ffccbc;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-weight: 600;
+      display: none;
+    }
+    .banner.show { display: block; }
+    .caption {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0 0 10px;
+    }
+    .decks {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .deck {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-size: 15px;
+      min-height: 44px;
+    }
+    .deck.active {
+      border-color: var(--accent);
+      background: #163040;
+    }
+    .grid-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 4px 0 10px;
+    }
+    .grid-title { font-weight: 700; }
+    .density {
+      display: flex;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .density button {
+      border: 0;
+      background: #1c1c1c;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 10px;
+      min-height: 40px;
+    }
+    .density button.active {
+      background: #263238;
+      color: #fff;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(var(--grid-min), 1fr));
+      gap: 10px;
+    }
+    body.density-compact { --grid-min: 110px; }
+    body.density-comfortable { --grid-min: 168px; }
+    body.density-large { --grid-min: 280px; }
+    .slide {
+      position: relative;
+      background: #000;
+      border: 2px solid #2a2a2a;
+      border-radius: 10px;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+    }
+    .slide.live { border-color: var(--live); }
+    .slide img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      background: #000;
+      pointer-events: none;
+    }
+    .ph {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      color: #ddd;
+      background: #142033;
+      font-size: 12px;
+      padding: 8px;
+      text-align: center;
+    }
+    .ph .play { font-size: 28px; }
+    .badge {
+      position: absolute;
+      left: 6px;
+      bottom: 6px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+    .live-tag {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      background: var(--live);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+    }
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 48px 16px;
+      line-height: 1.5;
+    }
+    .bar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: #0d0d0d;
+      border-top: 1px solid var(--line);
+    }
+    .bar button {
+      min-height: 52px;
+      border: 0;
+      border-radius: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      background: #2b2b2b;
+    }
+    .bar button.blank { background: #4a148c; }
+    .bar button.blank.on { background: #b71c1c; }
+    .bar button:active { filter: brightness(1.15); }
+  </style>
+</head>
+<body class="density-comfortable">
+  <header>
+    <div class="title">Slide Remote</div>
+    <div class="status"><span id="dot" class="dot"></span><span id="conn">Connecting…</span></div>
+  </header>
+  <div id="blankBanner" class="banner">BLANK — projector is black</div>
+  <p id="caption" class="caption">Waiting for the presenter…</p>
+  <div id="decks" class="decks"></div>
+  <div class="grid-head">
+    <div class="grid-title">Slides</div>
+    <div class="density" id="density">
+      <button type="button" data-density="compact">Compact</button>
+      <button type="button" data-density="comfortable">Comfortable</button>
+      <button type="button" data-density="large">Large</button>
+    </div>
+  </div>
+  <div id="grid" class="grid"></div>
+  <div id="empty" class="empty" hidden>Import a PDF on the computer, then this tablet can change decks and slides.</div>
+  <div class="bar">
+    <button id="prevBtn" type="button">Prev</button>
+    <button id="nextBtn" type="button">Next</button>
+    <button id="blankBtn" class="blank" type="button">Blank</button>
+  </div>
+  <script>
+    const decksEl = document.getElementById("decks");
+    const gridEl = document.getElementById("grid");
+    const emptyEl = document.getElementById("empty");
+    const captionEl = document.getElementById("caption");
+    const bannerEl = document.getElementById("blankBanner");
+    const connEl = document.getElementById("conn");
+    const dotEl = document.getElementById("dot");
+    const blankBtn = document.getElementById("blankBtn");
+    const DENSITY_KEY = "slide-remote-density";
+    let state = { decks: [], selectedDeckIndex: -1, selectedSlideIndex: -1, liveDeckIndex: -1, liveSlideIndex: -1, blanked: false, outputCaption: "" };
+    let ws = null;
+    let retryMs = 500;
+
+    function setConn(ok, text) {
+      connEl.textContent = text;
+      dotEl.className = "dot " + (ok ? "on" : "off");
+    }
+
+    function send(cmd) {
+      const payload = JSON.stringify(cmd);
+      if (ws && ws.readyState === 1) {
+        ws.send(payload);
+        return;
+      }
+      fetch("/api/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload
+      }).catch(() => {});
+    }
+
+    function render() {
+      captionEl.textContent = state.outputCaption || "No output";
+      bannerEl.classList.toggle("show", !!state.blanked);
+      blankBtn.textContent = state.blankLabel || (state.blanked ? "Unblank" : "Blank");
+      blankBtn.classList.toggle("on", !!state.blanked);
+
+      const decks = state.decks || [];
+      decksEl.innerHTML = "";
+      decks.forEach((deck) => {
+        const btn = document.createElement("button");
+        btn.className = "deck" + (deck.index === state.selectedDeckIndex ? " active" : "");
+        btn.type = "button";
+        btn.textContent = deck.name;
+        btn.addEventListener("click", () => send({ type: "selectDeck", deckIndex: deck.index }));
+        decksEl.appendChild(btn);
+      });
+
+      const deck = decks.find((d) => d.index === state.selectedDeckIndex) || decks[0];
+      gridEl.innerHTML = "";
+      if (!deck || !deck.slides || deck.slides.length === 0) {
+        emptyEl.hidden = false;
+        emptyEl.textContent = decks.length === 0
+          ? "Import a PDF on the computer, then this tablet can change decks and slides."
+          : "This deck has no slides yet.";
+        return;
+      }
+      emptyEl.hidden = true;
+      deck.slides.forEach((slide) => {
+        const card = document.createElement("button");
+        const isLive = deck.index === state.liveDeckIndex && slide.index === state.liveSlideIndex;
+        card.className = "slide" + (isLive ? " live" : "");
+        card.type = "button";
+        if (slide.hasThumb) {
+          const img = document.createElement("img");
+          img.alt = slide.label;
+          img.src = slide.thumb;
+          card.appendChild(img);
+        } else {
+          const ph = document.createElement("div");
+          ph.className = "ph";
+          ph.innerHTML = slide.isVideo
+            ? '<div class="play">▶</div><div></div>'
+            : "<div>Slide</div>";
+          ph.lastChild.textContent = slide.label;
+          card.appendChild(ph);
+        }
+        const badge = document.createElement("div");
+        badge.className = "badge";
+        badge.textContent = slide.isVideo ? "VIDEO" : slide.label;
+        card.appendChild(badge);
+        if (isLive) {
+          const tag = document.createElement("div");
+          tag.className = "live-tag";
+          tag.textContent = "LIVE";
+          card.appendChild(tag);
+        }
+        card.addEventListener("click", () => send({
+          type: "present",
+          deckIndex: deck.index,
+          slideIndex: slide.index
+        }));
+        gridEl.appendChild(card);
+      });
+    }
+
+    function applyState(next) {
+      if (!next || next.type && next.type !== "state") return;
+      state = next;
+      render();
+    }
+
+    async function loadState() {
+      const res = await fetch("/api/state", { cache: "no-store" });
+      if (!res.ok) throw new Error("state");
+      applyState(await res.json());
+    }
+
+    function connectWs() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(proto + "://" + location.host + "/ws");
+      ws.onopen = () => {
+        retryMs = 500;
+        setConn(true, "Connected");
+      };
+      ws.onmessage = (ev) => {
+        try { applyState(JSON.parse(ev.data)); } catch {}
+      };
+      ws.onclose = () => {
+        setConn(false, "Reconnecting…");
+        ws = null;
+        setTimeout(connectWs, retryMs);
+        retryMs = Math.min(retryMs * 2, 4000);
+      };
+      ws.onerror = () => { try { ws.close(); } catch {} };
+    }
+
+    function setDensity(name) {
+      const allowed = { compact: true, comfortable: true, large: true };
+      const density = allowed[name] ? name : "comfortable";
+      document.body.classList.remove("density-compact", "density-comfortable", "density-large");
+      document.body.classList.add("density-" + density);
+      document.querySelectorAll(".density button").forEach((btn) => {
+        btn.classList.toggle("active", btn.getAttribute("data-density") === density);
+      });
+      try { localStorage.setItem(DENSITY_KEY, density); } catch {}
+    }
+
+    document.getElementById("density").addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-density]");
+      if (btn) setDensity(btn.getAttribute("data-density"));
+    });
+    try { setDensity(localStorage.getItem(DENSITY_KEY) || "comfortable"); }
+    catch { setDensity("comfortable"); }
+
+    document.getElementById("prevBtn").onclick = () => send({ type: "prev" });
+    document.getElementById("nextBtn").onclick = () => send({ type: "next" });
+    blankBtn.onclick = () => send({ type: "blank" });
+
+    loadState().catch(() => setConn(false, "Waiting for presenter")).finally(connectWs);
+  </script>
+</body>
+</html>

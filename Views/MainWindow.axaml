@@ -91,6 +91,47 @@
             </Grid>
         </Border>
 
+        <Border DockPanel.Dock="Top"
+                Padding="12,8"
+                Background="#141414"
+                BorderBrush="#333"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Border Background="White"
+                        Padding="4"
+                        CornerRadius="4"
+                        IsVisible="{Binding HasRemoteQr}">
+                    <Image Width="76"
+                           Height="76"
+                           Stretch="Uniform"
+                           Source="{Binding RemoteQrImage}"/>
+                </Border>
+                <StackPanel Grid.Column="1"
+                            Margin="12,0"
+                            VerticalAlignment="Center"
+                            Spacing="2">
+                    <TextBlock Text="Tablet remote"
+                               FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding RemoteUrl}"
+                               FontFamily="Consolas, Cascadia Mono, Courier New"
+                               FontSize="16"/>
+                    <TextBlock Text="{Binding RemoteStatus}"
+                               Opacity="0.7"
+                               FontSize="12"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <Button Content="Copy address"
+                            Command="{Binding CopyRemoteUrlCommand}"/>
+                    <Button Content="Open on this PC"
+                            Command="{Binding OpenRemoteCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
         <Border DockPanel.Dock="Bottom"
                 Padding="16,8"
                 BorderBrush="#333"

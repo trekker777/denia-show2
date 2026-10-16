@@ -1,12 +1,18 @@
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using libvlc_media.Models;
 using libvlc_media.Services;
 using LibVLCSharp.Shared;
+using QRCoder;
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reactive;
@@ -22,8 +28,11 @@ namespace libvlc_media.ViewModels
         private readonly PdfImportService _pdfImport = new();
         private readonly VideoThumbnailService _thumbnails = new();
         private readonly List<Bitmap> _retiredImages = new();
+        private readonly Dictionary<string, byte[]> _remoteThumbCache = new();
+        private readonly object _remoteThumbLock = new();
         private readonly DispatcherTimer _advanceTimer;
         private readonly DispatcherTimer _videoProgressTimer;
+        private RemoteServer? _remote;
 
         private SlideDeckViewModel? _selectedDeck;
         private SlideItemViewModel? _selectedSlide;
@@ -48,6 +57,11 @@ namespace libvlc_media.ViewModels
         private VideoRendererOption _selectedVideoRenderer = VideoRenderers[3];
         private bool _isMuted;
         private double _volume = 80;
+        private string _remoteUrl = string.Empty;
+        private string _remoteStatus = "Tablet remote is starting…";
+        private Bitmap? _remoteQrImage;
+        private int _remoteClientCount;
+        private int _remoteRevision;
 
         public MainWindowViewModel()
             : this(null)
@@ -61,11 +75,7 @@ namespace libvlc_media.ViewModels
             Videos = new ObservableCollection<MediaClipViewModel>();
             Displays = new ObservableCollection<DisplayInfo>();
 
-            Decks.CollectionChanged += (_, _) =>
-            {
-                this.RaisePropertyChanged(nameof(HasDecks));
-                this.RaisePropertyChanged(nameof(HasSlides));
-            };
+            Decks.CollectionChanged += OnDecksChanged;
             Videos.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasVideos));
 
             PickPdfFiles = new Interaction<Unit, IReadOnlyList<string>>();
@@ -84,6 +94,8 @@ namespace libvlc_media.ViewModels
             ToggleBlankCommand = ReactiveCommand.Create(ToggleBlank);
             ToggleProjectorCommand = ReactiveCommand.Create(ToggleProjector);
             ToggleMuteCommand = ReactiveCommand.Create(ToggleMute);
+            CopyRemoteUrlCommand = ReactiveCommand.CreateFromTask(CopyRemoteUrlAsync);
+            OpenRemoteCommand = ReactiveCommand.Create(OpenRemoteInBrowser);
 
             _advanceTimer = new DispatcherTimer();
             _advanceTimer.Tick += (_, _) => GoToNextSlide(stopAtEnd: true);
@@ -148,6 +160,10 @@ namespace libvlc_media.ViewModels
 
         public ICommand ToggleMuteCommand { get; }
 
+        public ICommand CopyRemoteUrlCommand { get; }
+
+        public ICommand OpenRemoteCommand { get; }
+
         public MediaPlayer? PreviewMediaPlayer => _playback?.PreviewPlayer;
 
         public MediaPlayer? OutputMediaPlayer => _playback?.OutputPlayer;
@@ -206,6 +222,7 @@ namespace libvlc_media.ViewModels
                     ApplyThumbnailSizeToSlides();
                     this.RaisePropertyChanged(nameof(HasSlides));
                     this.RaisePropertyChanged(nameof(SelectedDeckTitle));
+                    RaiseRemoteState();
                 }
             }
         }
@@ -420,6 +437,59 @@ namespace libvlc_media.ViewModels
             set => this.RaiseAndSetIfChanged(ref _statusMessage, value);
         }
 
+        public string RemoteUrl
+        {
+            get => _remoteUrl;
+            private set => this.RaiseAndSetIfChanged(ref _remoteUrl, value);
+        }
+
+        public string RemoteStatus
+        {
+            get => _remoteStatus;
+            private set => this.RaiseAndSetIfChanged(ref _remoteStatus, value);
+        }
+
+        public Bitmap? RemoteQrImage
+        {
+            get => _remoteQrImage;
+            private set
+            {
+                var previous = _remoteQrImage;
+                if (SetAndRaise(ref _remoteQrImage, value))
+                {
+                    previous?.Dispose();
+                    this.RaisePropertyChanged(nameof(HasRemoteQr));
+                }
+            }
+        }
+
+        public bool HasRemoteQr => RemoteQrImage is not null;
+
+        public int RemoteClientCount
+        {
+            get => _remoteClientCount;
+            private set
+            {
+                if (SetAndRaise(ref _remoteClientCount, value))
+                    UpdateRemoteStatus();
+            }
+        }
+
+        public void StartTabletRemote()
+        {
+            if (_remote is not null)
+                return;
+
+            _remote = new RemoteServer(
+                captureState: () => Dispatcher.UIThread.Invoke(BuildRemoteSnapshot),
+                getThumbnail: GetRemoteThumbnail,
+                applyCommand: command => Dispatcher.UIThread.Post(() => ApplyRemoteCommand(command)));
+            _remote.ClientCountChanged += count =>
+                Dispatcher.UIThread.Post(() => RemoteClientCount = count);
+            _remote.Start();
+            UpdateRemoteInfo();
+        }
+
         public void SetDisplays(IReadOnlyList<DisplayInfo> displays)
         {
             var selectedIndex = SelectedDisplay?.Index;
@@ -521,6 +591,7 @@ namespace libvlc_media.ViewModels
                     {
                         using var stream = File.OpenRead(file);
                         item.SetThumbnail(Bitmap.DecodeToWidth(stream, width));
+                        RaiseRemoteState();
                     }
                     catch
                     {
@@ -654,6 +725,9 @@ namespace libvlc_media.ViewModels
         {
             _advanceTimer.Stop();
             _videoProgressTimer.Stop();
+            _remote?.Dispose();
+            _remote = null;
+            RemoteQrImage = null;
             _playback?.Stop();
             PresentedImage?.Dispose();
             foreach (var image in _retiredImages)
@@ -1151,6 +1225,272 @@ namespace libvlc_media.ViewModels
             this.RaisePropertyChanged(nameof(ShowVideo));
             this.RaisePropertyChanged(nameof(ShowIdle));
             this.RaisePropertyChanged(nameof(OutputCaption));
+            RaiseRemoteState();
+        }
+
+        private void OnDecksChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            this.RaisePropertyChanged(nameof(HasDecks));
+            this.RaisePropertyChanged(nameof(HasSlides));
+            if (e.NewItems is not null)
+            {
+                foreach (SlideDeckViewModel deck in e.NewItems)
+                    deck.Slides.CollectionChanged += OnSlidesChanged;
+            }
+
+            if (e.OldItems is not null)
+            {
+                foreach (SlideDeckViewModel deck in e.OldItems)
+                    deck.Slides.CollectionChanged -= OnSlidesChanged;
+            }
+
+            RaiseRemoteState();
+        }
+
+        private void OnSlidesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            this.RaisePropertyChanged(nameof(HasSlides));
+            this.RaisePropertyChanged(nameof(SelectedDeckTitle));
+            RaiseRemoteState();
+        }
+
+        private void RaiseRemoteState() => _remote?.NotifyStateChanged();
+
+        private void UpdateRemoteInfo()
+        {
+            if (_remote is null)
+                return;
+
+            RemoteUrl = _remote.Urls.FirstOrDefault(url => url.Contains("127.0.0.1", StringComparison.Ordinal) is false)
+                        ?? _remote.Urls.FirstOrDefault()
+                        ?? string.Empty;
+            UpdateRemoteStatus();
+            BuildRemoteQr();
+        }
+
+        private void UpdateRemoteStatus()
+        {
+            if (_remote is { Error: { Length: > 0 } error })
+            {
+                RemoteStatus = error;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(RemoteUrl) || RemoteUrl.Contains("127.0.0.1", StringComparison.Ordinal))
+            {
+                RemoteStatus = "No LAN address found. Connect this PC to Wi‑Fi or Ethernet so a tablet can reach it.";
+                return;
+            }
+
+            RemoteStatus = RemoteClientCount == 0
+                ? "Waiting for a tablet on the church Wi‑Fi. Same network as this PC."
+                : RemoteClientCount == 1
+                    ? "1 tablet connected"
+                    : $"{RemoteClientCount} tablets connected";
+        }
+
+        private void BuildRemoteQr()
+        {
+            if (string.IsNullOrWhiteSpace(RemoteUrl))
+            {
+                RemoteQrImage = null;
+                return;
+            }
+
+            try
+            {
+                using var generator = new QRCodeGenerator();
+                using var data = generator.CreateQrCode(RemoteUrl, QRCodeGenerator.ECCLevel.M);
+                var png = new PngByteQRCode(data);
+                var bytes = png.GetGraphic(6);
+                using var stream = new MemoryStream(bytes);
+                RemoteQrImage = new Bitmap(stream);
+            }
+            catch
+            {
+                RemoteQrImage = null;
+            }
+        }
+
+        private RemoteSnapshot BuildRemoteSnapshot()
+        {
+            _remoteRevision++;
+            var liveDeck = SelectedSlide is null ? null : FindDeck(SelectedSlide);
+            var liveDeckIndex = liveDeck is null ? -1 : Decks.IndexOf(liveDeck);
+            var liveSlideIndex = liveDeck is null || SelectedSlide is null
+                ? -1
+                : liveDeck.Slides.IndexOf(SelectedSlide);
+
+            var snapshot = new RemoteSnapshot
+            {
+                Revision = _remoteRevision,
+                Blanked = IsBlanked,
+                OutputCaption = OutputCaption,
+                BlankLabel = BlankLabel,
+                SelectedDeckIndex = SelectedDeck is null ? -1 : Decks.IndexOf(SelectedDeck),
+                SelectedSlideIndex = -1,
+                LiveDeckIndex = liveDeckIndex,
+                LiveSlideIndex = liveSlideIndex
+            };
+
+            if (SelectedDeck is not null && SelectedSlide is not null)
+                snapshot.SelectedSlideIndex = SelectedDeck.Slides.IndexOf(SelectedSlide);
+
+            for (var d = 0; d < Decks.Count; d++)
+            {
+                var deck = Decks[d];
+                var dto = new RemoteDeckDto
+                {
+                    Index = d,
+                    Name = deck.Name,
+                    Summary = deck.Summary
+                };
+
+                for (var s = 0; s < deck.Slides.Count; s++)
+                {
+                    var slide = deck.Slides[s];
+                    var hasFile = !string.IsNullOrWhiteSpace(slide.ImagePath) && File.Exists(slide.ImagePath);
+                    var hasThumb = slide.HasThumbnail || hasFile;
+                    var version = slide.HasThumbnail ? 1 : 0;
+                    dto.Slides.Add(new RemoteSlideDto
+                    {
+                        Index = s,
+                        Label = slide.PageLabel,
+                        IsVideo = slide.IsVideo,
+                        HasThumb = hasThumb,
+                        Thumb = hasThumb ? $"/thumb/{d}/{s}?v={version}" : string.Empty
+                    });
+                }
+
+                snapshot.Decks.Add(dto);
+            }
+
+            return snapshot;
+        }
+
+        private void ApplyRemoteCommand(RemoteCommand command)
+        {
+            switch (command.Type.Trim().ToLowerInvariant())
+            {
+                case "next":
+                    GoToNextSlide(stopAtEnd: false);
+                    break;
+                case "prev":
+                case "previous":
+                    GoToPreviousSlide();
+                    break;
+                case "blank":
+                    ToggleBlank();
+                    break;
+                case "selectdeck":
+                    if (command.DeckIndex >= 0 && command.DeckIndex < Decks.Count)
+                        SelectedDeck = Decks[command.DeckIndex];
+                    break;
+                case "present":
+                    if (command.DeckIndex < 0 || command.DeckIndex >= Decks.Count)
+                        return;
+                    var deck = Decks[command.DeckIndex];
+                    if (command.SlideIndex < 0 || command.SlideIndex >= deck.Slides.Count)
+                        return;
+                    SelectedDeck = deck;
+                    PresentSlide(deck.Slides[command.SlideIndex]);
+                    break;
+            }
+        }
+
+        private byte[]? GetRemoteThumbnail(int deckIndex, int slideIndex, int width)
+        {
+            string? path = null;
+            Bitmap? memory = null;
+            Dispatcher.UIThread.Invoke(() =>
+            {
+                if (deckIndex < 0 || deckIndex >= Decks.Count)
+                    return;
+                var deck = Decks[deckIndex];
+                if (slideIndex < 0 || slideIndex >= deck.Slides.Count)
+                    return;
+                var slide = deck.Slides[slideIndex];
+                if (!string.IsNullOrWhiteSpace(slide.ImagePath) && File.Exists(slide.ImagePath))
+                    path = slide.ImagePath;
+                else
+                    memory = slide.Thumbnail;
+            });
+
+            if (path is not null)
+                return EncodeFileThumbnail(path, width);
+
+            if (memory is null)
+                return null;
+
+            return Dispatcher.UIThread.Invoke(() =>
+            {
+                try
+                {
+                    using var ms = new MemoryStream();
+                    memory.Save(ms);
+                    return ms.ToArray();
+                }
+                catch
+                {
+                    return null;
+                }
+            });
+        }
+
+        private byte[]? EncodeFileThumbnail(string path, int width)
+        {
+            try
+            {
+                width = Math.Clamp(width, 160, 1920);
+                var info = new FileInfo(path);
+                var key = $"{path}:{info.Length}:{info.LastWriteTimeUtc.Ticks}:{width}";
+                lock (_remoteThumbLock)
+                {
+                    if (_remoteThumbCache.TryGetValue(key, out var cached))
+                        return cached;
+                }
+
+                using var stream = File.OpenRead(path);
+                using var bitmap = Bitmap.DecodeToWidth(stream, width);
+                using var ms = new MemoryStream();
+                bitmap.Save(ms);
+                var bytes = ms.ToArray();
+                lock (_remoteThumbLock)
+                {
+                    if (_remoteThumbCache.Count > 120)
+                        _remoteThumbCache.Clear();
+                    _remoteThumbCache[key] = bytes;
+                }
+
+                return bytes;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task CopyRemoteUrlAsync()
+        {
+            if (string.IsNullOrWhiteSpace(RemoteUrl))
+                return;
+
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime
+                {
+                    MainWindow.Clipboard: { } clipboard
+                })
+            {
+                await clipboard.SetTextAsync(RemoteUrl);
+                StatusMessage = "Tablet remote address copied.";
+            }
+        }
+
+        private void OpenRemoteInBrowser()
+        {
+            if (string.IsNullOrWhiteSpace(RemoteUrl))
+                return;
+
+            Process.Start(new ProcessStartInfo(RemoteUrl) { UseShellExecute = true });
         }
     }
 }

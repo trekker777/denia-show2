@@ -42,6 +42,8 @@ namespace libvlc_media
                         $"LibVLC failed to start ({vlcError}). Slides still work; video playback is unavailable.";
                 }
 
+                viewModel.StartTabletRemote();
+
                 desktop.MainWindow = new MainWindow
                 {
                     DataContext = viewModel,
