@@ -9,6 +9,10 @@ namespace libvlc_media.ViewModels
 {
     public sealed class SlideDeckViewModel : ViewModelBase, IDisposable
     {
+        private bool _isAutoAdvanceEnabled;
+        private bool _isLoopSlides = true;
+        private decimal _autoAdvanceSeconds = 8;
+
         public SlideDeckViewModel(string name, string sourcePath, string cacheDirectory)
         {
             Name = name;
@@ -25,6 +29,24 @@ namespace libvlc_media.ViewModels
         public string CacheDirectory { get; }
 
         public ObservableCollection<SlideItemViewModel> Slides { get; }
+
+        public bool IsAutoAdvanceEnabled
+        {
+            get => _isAutoAdvanceEnabled;
+            set => this.RaiseAndSetIfChanged(ref _isAutoAdvanceEnabled, value);
+        }
+
+        public bool IsLoopSlides
+        {
+            get => _isLoopSlides;
+            set => this.RaiseAndSetIfChanged(ref _isLoopSlides, value);
+        }
+
+        public decimal AutoAdvanceSeconds
+        {
+            get => _autoAdvanceSeconds;
+            set => this.RaiseAndSetIfChanged(ref _autoAdvanceSeconds, value);
+        }
 
         public string Summary
         {

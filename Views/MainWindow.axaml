@@ -440,10 +440,12 @@
                         <StackPanel Spacing="8">
                             <ToggleSwitch IsChecked="{Binding IsAutoAdvanceEnabled}"
                                           OnContent="Auto-advance on"
-                                          OffContent="Auto-advance off"/>
+                                          OffContent="Auto-advance off"
+                                          IsEnabled="{Binding HasSlides}"/>
                             <ToggleSwitch IsChecked="{Binding IsLoopSlides}"
                                           OnContent="Loop slides on"
-                                          OffContent="Loop slides off"/>
+                                          OffContent="Loop slides off"
+                                          IsEnabled="{Binding HasSlides}"/>
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBlock Text="Seconds"
                                            VerticalAlignment="Center"
@@ -453,6 +455,7 @@
                                                Increment="1"
                                                FormatString="0"
                                                Width="120"
+                                               IsEnabled="{Binding HasSlides}"
                                                Value="{Binding AutoAdvanceSeconds}"/>
                             </StackPanel>
                         </StackPanel>

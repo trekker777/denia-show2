@@ -48,9 +48,7 @@ namespace libvlc_media.ViewModels
         private bool _isBusy;
         private bool _isPlaying;
         private bool _isPaused;
-        private bool _isAutoAdvanceEnabled;
-        private bool _isLoopSlides = true;
-        private decimal _autoAdvanceSeconds = 8;
+
         private long _videoTimeMs;
         private long _videoLengthMs;
         private string _statusMessage = "Import a PDF to build a slide deck, or add an MP4 to play on the projector.";
@@ -222,6 +220,10 @@ namespace libvlc_media.ViewModels
                     ApplyThumbnailSizeToSlides();
                     this.RaisePropertyChanged(nameof(HasSlides));
                     this.RaisePropertyChanged(nameof(SelectedDeckTitle));
+                    this.RaisePropertyChanged(nameof(IsAutoAdvanceEnabled));
+                    this.RaisePropertyChanged(nameof(IsLoopSlides));
+                    this.RaisePropertyChanged(nameof(AutoAdvanceSeconds));
+                    RestartAdvanceTimer();
                     RaiseRemoteState();
                 }
             }
@@ -374,18 +376,29 @@ namespace libvlc_media.ViewModels
 
         public bool IsAutoAdvanceEnabled
         {
-            get => _isAutoAdvanceEnabled;
+            get => SelectedDeck?.IsAutoAdvanceEnabled ?? false;
             set
             {
-                if (SetAndRaise(ref _isAutoAdvanceEnabled, value))
-                    RestartAdvanceTimer();
+                if (SelectedDeck is null || SelectedDeck.IsAutoAdvanceEnabled == value)
+                    return;
+
+                SelectedDeck.IsAutoAdvanceEnabled = value;
+                this.RaisePropertyChanged(nameof(IsAutoAdvanceEnabled));
+                RestartAdvanceTimer();
             }
         }
 
         public bool IsLoopSlides
         {
-            get => _isLoopSlides;
-            set => this.RaiseAndSetIfChanged(ref _isLoopSlides, value);
+            get => SelectedDeck?.IsLoopSlides ?? true;
+            set
+            {
+                if (SelectedDeck is null || SelectedDeck.IsLoopSlides == value)
+                    return;
+
+                SelectedDeck.IsLoopSlides = value;
+                this.RaisePropertyChanged(nameof(IsLoopSlides));
+            }
         }
 
         public string VideoTimeText => FormatTimestamp(_videoTimeMs);
@@ -423,11 +436,15 @@ namespace libvlc_media.ViewModels
 
         public decimal AutoAdvanceSeconds
         {
-            get => _autoAdvanceSeconds;
+            get => SelectedDeck?.AutoAdvanceSeconds ?? 8;
             set
             {
-                if (SetAndRaise(ref _autoAdvanceSeconds, value))
-                    RestartAdvanceTimer();
+                if (SelectedDeck is null || SelectedDeck.AutoAdvanceSeconds == value)
+                    return;
+
+                SelectedDeck.AutoAdvanceSeconds = value;
+                this.RaisePropertyChanged(nameof(AutoAdvanceSeconds));
+                RestartAdvanceTimer();
             }
         }
 
