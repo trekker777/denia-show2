@@ -100,6 +100,28 @@
       margin: 4px 0 10px;
     }
     .grid-title { font-weight: 700; }
+    .grid-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .view-only-btn {
+      border: 1px solid var(--line);
+      background: #1c1c1c;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 12px;
+      min-height: 40px;
+      border-radius: 8px;
+    }
+    .view-only-btn.active {
+      background: #263238;
+      color: #fff;
+      border-color: var(--accent);
+    }
     .density {
       display: flex;
       border: 1px solid var(--line);
@@ -214,6 +236,15 @@
     .bar button.blank { background: #4a148c; }
     .bar button.blank.on { background: #b71c1c; }
     .bar button:active { filter: brightness(1.15); }
+    body.view-only .slide,
+    body.view-only .deck,
+    body.view-only .bar button {
+      pointer-events: none;
+      cursor: default;
+    }
+    body.view-only .bar button {
+      opacity: 0.35;
+    }
   </style>
 </head>
 <body class="density-comfortable">
@@ -226,10 +257,13 @@
   <div id="decks" class="decks"></div>
   <div class="grid-head">
     <div class="grid-title">Slides</div>
-    <div class="density" id="density">
-      <button type="button" data-density="compact">Compact</button>
-      <button type="button" data-density="comfortable">Comfortable</button>
-      <button type="button" data-density="large">Large</button>
+    <div class="grid-tools">
+      <button type="button" id="viewOnlyBtn" class="view-only-btn">View Only</button>
+      <div class="density" id="density">
+        <button type="button" data-density="compact">Compact</button>
+        <button type="button" data-density="comfortable">Comfortable</button>
+        <button type="button" data-density="large">Large</button>
+      </div>
     </div>
   </div>
   <div id="grid" class="grid"></div>
@@ -249,6 +283,9 @@
     const dotEl = document.getElementById("dot");
     const blankBtn = document.getElementById("blankBtn");
     const DENSITY_KEY = "slide-remote-density";
+    const VIEW_ONLY_KEY = "slide-remote-view-only";
+    const viewOnlyBtn = document.getElementById("viewOnlyBtn");
+    let viewOnly = false;
     let state = { decks: [], selectedDeckIndex: -1, selectedSlideIndex: -1, liveDeckIndex: -1, liveSlideIndex: -1, blanked: false, outputCaption: "" };
     let ws = null;
     let retryMs = 500;
@@ -260,6 +297,7 @@
     }
 
     function send(cmd) {
+      if (viewOnly) return;
       const payload = JSON.stringify(cmd);
       if (ws && ws.readyState === 1) {
         ws.send(payload);
@@ -377,6 +415,18 @@
       };
       ws.onerror = () => { try { ws.close(); } catch {} };
     }
+
+    function setViewOnly(on) {
+      viewOnly = !!on;
+      document.body.classList.toggle("view-only", viewOnly);
+      viewOnlyBtn.classList.toggle("active", viewOnly);
+      viewOnlyBtn.setAttribute("aria-pressed", viewOnly ? "true" : "false");
+      try { localStorage.setItem(VIEW_ONLY_KEY, viewOnly ? "1" : "0"); } catch {}
+    }
+
+    viewOnlyBtn.addEventListener("click", () => setViewOnly(!viewOnly));
+    try { setViewOnly(localStorage.getItem(VIEW_ONLY_KEY) === "1"); }
+    catch { setViewOnly(false); }
 
     function setDensity(name) {
       const allowed = { compact: true, comfortable: true, large: true };
