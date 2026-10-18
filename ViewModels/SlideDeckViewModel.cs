@@ -26,7 +26,9 @@ namespace libvlc_media.ViewModels
 
         public string SourcePath { get; }
 
-        public string CacheDirectory { get; }
+        public string CacheDirectory { get; set; }
+
+        public bool OwnsCacheDirectory { get; set; } = true;
 
         public ObservableCollection<SlideItemViewModel> Slides { get; }
 
@@ -68,7 +70,8 @@ namespace libvlc_media.ViewModels
                 slide.Dispose();
 
             Slides.Clear();
-            SlideCache.DeleteFolder(CacheDirectory);
+            if (OwnsCacheDirectory)
+                SlideCache.DeleteFolder(CacheDirectory);
         }
     }
 }

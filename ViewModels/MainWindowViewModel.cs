@@ -27,6 +27,7 @@ namespace libvlc_media.ViewModels
         private readonly VlcPlaybackService? _playback;
         private readonly PdfImportService _pdfImport = new();
         private readonly VideoThumbnailService _thumbnails = new();
+        private readonly WorkspaceService _workspace = new();
         private readonly List<Bitmap> _retiredImages = new();
         private readonly Dictionary<string, byte[]> _remoteThumbCache = new();
         private readonly object _remoteThumbLock = new();
@@ -60,6 +61,11 @@ namespace libvlc_media.ViewModels
         private Bitmap? _remoteQrImage;
         private int _remoteClientCount;
         private int _remoteRevision;
+        private string? _workspaceFolder;
+        private string? _workspaceName;
+        private bool _isWorkspaceDirty;
+        private bool _copyVideosIntoWorkspace;
+        private bool _suspendDirty;
 
         public MainWindowViewModel()
             : this(null)
@@ -78,6 +84,9 @@ namespace libvlc_media.ViewModels
 
             PickPdfFiles = new Interaction<Unit, IReadOnlyList<string>>();
             PickVideoFiles = new Interaction<Unit, IReadOnlyList<string>>();
+            PickSaveWorkspacePath = new Interaction<string, string?>();
+            PickOpenWorkspacePath = new Interaction<Unit, string?>();
+            ConfirmUnsaved = new Interaction<Unit, UnsavedDecision>();
 
             ImportPdfCommand = ReactiveCommand.CreateFromTask(ImportPdfsAsync);
             ImportVideoCommand = ReactiveCommand.CreateFromTask(ImportMediaAsync);
@@ -94,6 +103,9 @@ namespace libvlc_media.ViewModels
             ToggleMuteCommand = ReactiveCommand.Create(ToggleMute);
             CopyRemoteUrlCommand = ReactiveCommand.CreateFromTask(CopyRemoteUrlAsync);
             OpenRemoteCommand = ReactiveCommand.Create(OpenRemoteInBrowser);
+            OpenWorkspaceCommand = ReactiveCommand.CreateFromTask(OpenWorkspaceAsync);
+            SaveWorkspaceCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceAsync);
+            SaveWorkspaceAsCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceAsAsync);
 
             _advanceTimer = new DispatcherTimer();
             _advanceTimer.Tick += (_, _) => GoToNextSlide(stopAtEnd: true);
@@ -132,6 +144,12 @@ namespace libvlc_media.ViewModels
 
         public Interaction<Unit, IReadOnlyList<string>> PickVideoFiles { get; }
 
+        public Interaction<string, string?> PickSaveWorkspacePath { get; }
+
+        public Interaction<Unit, string?> PickOpenWorkspacePath { get; }
+
+        public Interaction<Unit, UnsavedDecision> ConfirmUnsaved { get; }
+
         public ICommand ImportPdfCommand { get; }
 
         public ICommand ImportVideoCommand { get; }
@@ -162,6 +180,12 @@ namespace libvlc_media.ViewModels
 
         public ICommand OpenRemoteCommand { get; }
 
+        public ICommand OpenWorkspaceCommand { get; }
+
+        public ICommand SaveWorkspaceCommand { get; }
+
+        public ICommand SaveWorkspaceAsCommand { get; }
+
         public MediaPlayer? PreviewMediaPlayer => _playback?.PreviewPlayer;
 
         public MediaPlayer? OutputMediaPlayer => _playback?.OutputPlayer;
@@ -191,6 +215,37 @@ namespace libvlc_media.ViewModels
         public string SelectedDeckTitle => SelectedDeck is null
             ? "No deck selected"
             : $"{SelectedDeck.Name}  ·  {SelectedDeck.Summary}";
+
+        public string WindowTitle
+        {
+            get
+            {
+                var name = string.IsNullOrWhiteSpace(_workspaceName) ? "Untitled" : _workspaceName;
+                return IsWorkspaceDirty
+                    ? $"{name}*  —  Slide Presenter"
+                    : $"{name}  —  Slide Presenter";
+            }
+        }
+
+        public bool IsWorkspaceDirty
+        {
+            get => _isWorkspaceDirty;
+            private set
+            {
+                if (SetAndRaise(ref _isWorkspaceDirty, value))
+                    this.RaisePropertyChanged(nameof(WindowTitle));
+            }
+        }
+
+        public bool CopyVideosIntoWorkspace
+        {
+            get => _copyVideosIntoWorkspace;
+            set
+            {
+                if (SetAndRaise(ref _copyVideosIntoWorkspace, value))
+                    MarkDirty();
+            }
+        }
 
         public string OutputCaption
         {
@@ -385,6 +440,7 @@ namespace libvlc_media.ViewModels
                 SelectedDeck.IsAutoAdvanceEnabled = value;
                 this.RaisePropertyChanged(nameof(IsAutoAdvanceEnabled));
                 RestartAdvanceTimer();
+                MarkDirty();
             }
         }
 
@@ -398,6 +454,7 @@ namespace libvlc_media.ViewModels
 
                 SelectedDeck.IsLoopSlides = value;
                 this.RaisePropertyChanged(nameof(IsLoopSlides));
+                MarkDirty();
             }
         }
 
@@ -445,6 +502,7 @@ namespace libvlc_media.ViewModels
                 SelectedDeck.AutoAdvanceSeconds = value;
                 this.RaisePropertyChanged(nameof(AutoAdvanceSeconds));
                 RestartAdvanceTimer();
+                MarkDirty();
             }
         }
 
@@ -542,8 +600,12 @@ namespace libvlc_media.ViewModels
 
             if (slide.IsVideo)
             {
-                if (string.IsNullOrWhiteSpace(slide.VideoPath))
+                if (string.IsNullOrWhiteSpace(slide.VideoPath) || !File.Exists(slide.VideoPath))
+                {
+                    StatusMessage = $"Video file was not found: {slide.PageLabel}";
+                    NotifyOutputState();
                     return;
+                }
 
                 var clip = Videos.FirstOrDefault(v =>
                                string.Equals(v.FilePath, slide.VideoPath, StringComparison.OrdinalIgnoreCase))
@@ -584,6 +646,7 @@ namespace libvlc_media.ViewModels
             this.RaisePropertyChanged(nameof(SelectedDeckTitle));
             this.RaisePropertyChanged(nameof(HasSlides));
             StatusMessage = $"Inserted {Path.GetFileName(videoPath)} at position {index + 1}. Click it to play.";
+            MarkDirty();
             _ = CaptureVideoThumbnailAsync(item);
         }
 
@@ -647,6 +710,7 @@ namespace libvlc_media.ViewModels
             this.RaisePropertyChanged(nameof(SelectedDeckTitle));
             this.RaisePropertyChanged(nameof(HasSlides));
             StatusMessage = $"Inserted {Path.GetFileName(imagePath)} at position {index + 1}.";
+            MarkDirty();
         }
 
         public void InsertMediaAt(MediaClipViewModel clip, int index)
@@ -674,6 +738,7 @@ namespace libvlc_media.ViewModels
             var to = insertIndex > from ? insertIndex - 1 : insertIndex;
             slides.Move(from, to);
             StatusMessage = $"Moved to position {to + 1}.";
+            MarkDirty();
         }
 
         public void RemoveSlide(SlideItemViewModel slide)
@@ -711,6 +776,7 @@ namespace libvlc_media.ViewModels
             StatusMessage = slide.IsVideo
                 ? $"Removed {slide.PageLabel} from the deck."
                 : $"Removed slide {slide.PageLabel} from the deck.";
+            MarkDirty();
         }
 
         public void SetDropInsertIndex(int? index)
@@ -816,6 +882,7 @@ namespace libvlc_media.ViewModels
                     Decks.Add(deck);
                     lastDeck = deck;
                     StatusMessage = $"Imported {name} — {deck.Summary}. Click a slide to send it to the projector.";
+                    MarkDirty();
                 }
 
                 if (lastDeck is not null)
@@ -860,6 +927,8 @@ namespace libvlc_media.ViewModels
             StatusMessage = added == 1
                 ? "Imported 1 media item. Drag it onto the slide grid, or use Play/Show."
                 : $"Imported {added} media items.";
+            if (added > 0)
+                MarkDirty();
         }
 
         private void ActivateMedia(MediaClipViewModel clip)
@@ -1075,6 +1144,7 @@ namespace libvlc_media.ViewModels
             SelectedDeck = Decks.FirstOrDefault();
             StatusMessage = $"Removed {deck.Name}.";
             NotifyOutputState();
+            MarkDirty();
         }
 
         private void RemoveSelectedSlide()
@@ -1095,6 +1165,7 @@ namespace libvlc_media.ViewModels
             Videos.Remove(clip);
             SelectedVideo = null;
             StatusMessage = $"Removed {clip.Name}.";
+            MarkDirty();
         }
 
         private void GoToNextSlide(bool stopAtEnd)
@@ -1508,6 +1579,323 @@ namespace libvlc_media.ViewModels
                 return;
 
             Process.Start(new ProcessStartInfo(RemoteUrl) { UseShellExecute = true });
+        }
+
+        private void MarkDirty()
+        {
+            if (_suspendDirty)
+                return;
+            IsWorkspaceDirty = true;
+        }
+
+        private void SetWorkspaceIdentity(string? folder, string? name, bool dirty)
+        {
+            _workspaceFolder = folder;
+            _workspaceName = name;
+            IsWorkspaceDirty = dirty;
+            this.RaisePropertyChanged(nameof(WindowTitle));
+        }
+
+        public async Task<bool> ConfirmDiscardOrSaveAsync()
+        {
+            if (!IsWorkspaceDirty)
+                return true;
+
+            UnsavedDecision decision;
+            try
+            {
+                decision = await ConfirmUnsaved.Handle(Unit.Default);
+            }
+            catch (UnhandledInteractionException<Unit, UnsavedDecision>)
+            {
+                return !IsWorkspaceDirty;
+            }
+
+            return decision switch
+            {
+                UnsavedDecision.Discard => true,
+                UnsavedDecision.Save => await SaveWorkspaceAsync(),
+                _ => false
+            };
+        }
+
+        private async Task OpenWorkspaceAsync()
+        {
+            if (IsBusy)
+                return;
+
+            if (!await ConfirmDiscardOrSaveAsync())
+                return;
+
+            string? picked;
+            try
+            {
+                picked = await PickOpenWorkspacePath.Handle(Unit.Default);
+            }
+            catch (UnhandledInteractionException<Unit, string?>)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(picked))
+                return;
+
+            var folder = WorkspaceService.FindWorkspaceFolder(picked);
+            if (folder is null)
+            {
+                StatusMessage = "That folder is not a slide workspace. Pick a folder that contains workspace.json.";
+                return;
+            }
+
+            IsBusy = true;
+            try
+            {
+                var loaded = await Task.Run(() => _workspace.Load(folder));
+                ApplyLoadedWorkspace(loaded);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Could not open workspace: {ex.Message}";
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task<bool> SaveWorkspaceAsync()
+        {
+            if (string.IsNullOrWhiteSpace(_workspaceFolder))
+                return await SaveWorkspaceAsAsync();
+
+            return await WriteWorkspaceAsync(_workspaceFolder, _workspaceName ?? Path.GetFileName(_workspaceFolder));
+        }
+
+        private async Task<bool> SaveWorkspaceAsAsync()
+        {
+            string? picked;
+            try
+            {
+                picked = await PickSaveWorkspacePath.Handle(_workspaceName ?? DateTime.Now.ToString("yyyy-MM-dd"));
+            }
+            catch (UnhandledInteractionException<string, string?>)
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(picked))
+                return false;
+
+            var folder = WorkspaceService.ResolveFolderFromSavePath(picked);
+            var name = Path.GetFileName(folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            return await WriteWorkspaceAsync(folder, name);
+        }
+
+        private async Task<bool> WriteWorkspaceAsync(string folder, string name)
+        {
+            if (IsBusy)
+                return false;
+
+            IsBusy = true;
+            try
+            {
+                var request = BuildSaveRequest(name);
+                var saved = await Task.Run(() =>
+                    _workspace.SaveAsync(
+                        folder,
+                        request,
+                        new Progress<string>(message =>
+                            Dispatcher.UIThread.Post(() => StatusMessage = message))).GetAwaiter().GetResult());
+
+                ApplySavedWorkspace(saved);
+                SetWorkspaceIdentity(saved.Folder, saved.Name, dirty: false);
+                StatusMessage = CopyVideosIntoWorkspace
+                    ? $"Saved {saved.Name} (videos copied into the workspace folder)."
+                    : $"Saved {saved.Name}.";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Could not save workspace: {ex.Message}";
+                return false;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private WorkspaceSaveRequest BuildSaveRequest(string name)
+        {
+            var request = new WorkspaceSaveRequest
+            {
+                Name = name,
+                CopyVideos = CopyVideosIntoWorkspace
+            };
+
+            foreach (var deck in Decks)
+            {
+                var deckReq = new WorkspaceDeckSaveRequest
+                {
+                    Name = deck.Name,
+                    SourcePdf = deck.SourcePath,
+                    AutoAdvance = deck.IsAutoAdvanceEnabled,
+                    LoopSlides = deck.IsLoopSlides,
+                    AutoAdvanceSeconds = deck.AutoAdvanceSeconds
+                };
+
+                foreach (var slide in deck.Slides)
+                {
+                    deckReq.Slides.Add(new WorkspaceSlideSaveRequest
+                    {
+                        IsVideo = slide.IsVideo,
+                        SourcePath = slide.IsVideo ? slide.VideoPath ?? string.Empty : slide.ImagePath,
+                        Label = slide.PageLabel
+                    });
+                }
+
+                request.Decks.Add(deckReq);
+            }
+
+            foreach (var clip in Videos)
+                request.LibraryPaths.Add(clip.FilePath);
+
+            return request;
+        }
+
+        private void ApplySavedWorkspace(SavedWorkspace saved)
+        {
+            for (var d = 0; d < Decks.Count && d < saved.Decks.Count; d++)
+            {
+                var deck = Decks[d];
+                var savedDeck = saved.Decks[d];
+                var oldCache = deck.CacheDirectory;
+                var owned = deck.OwnsCacheDirectory;
+                deck.CacheDirectory = savedDeck.Directory;
+                deck.OwnsCacheDirectory = false;
+
+                for (var s = 0; s < deck.Slides.Count && s < savedDeck.SlidePaths.Count; s++)
+                {
+                    var path = savedDeck.SlidePaths[s];
+                    if (deck.Slides[s].IsVideo)
+                        deck.Slides[s].RetargetVideo(path);
+                    else
+                        deck.Slides[s].RetargetImage(path);
+                }
+
+                if (owned
+                    && !string.IsNullOrWhiteSpace(oldCache)
+                    && !IsPathUnder(oldCache, saved.Folder))
+                    SlideCache.DeleteFolder(oldCache);
+            }
+
+            SelectedVideo = null;
+            var rebuilt = new List<MediaClipViewModel>();
+            foreach (var path in saved.LibraryPaths.Distinct(StringComparer.OrdinalIgnoreCase))
+                rebuilt.Add(new MediaClipViewModel(path, ActivateMedia));
+            Videos.Clear();
+            foreach (var clip in rebuilt)
+                Videos.Add(clip);
+        }
+
+        private void ApplyLoadedWorkspace(LoadedWorkspace loaded)
+        {
+            _suspendDirty = true;
+            try
+            {
+                StopVideo();
+                PresentedImage = null;
+                SelectedSlide = null;
+                SelectedVideo = null;
+                foreach (var deck in Decks.ToList())
+                    deck.Dispose();
+                Decks.Clear();
+                Videos.Clear();
+
+                CopyVideosIntoWorkspace = loaded.CopyVideos;
+
+                foreach (var loadedDeck in loaded.Decks)
+                {
+                    var deck = new SlideDeckViewModel(loadedDeck.Name, loadedDeck.SourcePdf ?? string.Empty, loadedDeck.Directory)
+                    {
+                        OwnsCacheDirectory = false,
+                        IsAutoAdvanceEnabled = loadedDeck.AutoAdvance,
+                        IsLoopSlides = loadedDeck.LoopSlides,
+                        AutoAdvanceSeconds = loadedDeck.AutoAdvanceSeconds
+                    };
+
+                    var page = 0;
+                    foreach (var loadedSlide in loadedDeck.Slides)
+                    {
+                        if (loadedSlide.IsVideo)
+                        {
+                            var item = SlideItemViewModel.FromVideo(
+                                loadedSlide.Path,
+                                ThumbnailSize,
+                                ThumbnailHeight(),
+                                PresentSlide,
+                                RemoveSlide);
+                            deck.Slides.Add(item);
+                            if (!loadedSlide.Missing)
+                                _ = CaptureVideoThumbnailAsync(item);
+                        }
+                        else
+                        {
+                            page++;
+                            var pageNumber = int.TryParse(loadedSlide.Label, out var n) ? n : page;
+                            deck.Slides.Add(SlideItemViewModel.FromImage(
+                                loadedSlide.Path,
+                                pageNumber,
+                                ThumbnailSize,
+                                ThumbnailHeight(),
+                                PresentSlide,
+                                RemoveSlide));
+                        }
+                    }
+
+                    Decks.Add(deck);
+                }
+
+                foreach (var path in loaded.LibraryPaths)
+                {
+                    if (Videos.Any(v => string.Equals(v.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+                    Videos.Add(new MediaClipViewModel(path, ActivateMedia));
+                }
+
+                foreach (var deck in Decks)
+                {
+                    foreach (var slide in deck.Slides.Where(s => s.IsVideo && !s.FileMissing))
+                    {
+                        if (Videos.Any(v => string.Equals(v.FilePath, slide.VideoPath, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+                        if (!string.IsNullOrWhiteSpace(slide.VideoPath))
+                            Videos.Add(new MediaClipViewModel(slide.VideoPath, ActivateMedia));
+                    }
+                }
+
+                SelectedDeck = Decks.FirstOrDefault();
+                SetWorkspaceIdentity(loaded.Folder, loaded.Name, dirty: false);
+                NotifyOutputState();
+
+                if (loaded.Warnings.Count == 0)
+                    StatusMessage = $"Opened {loaded.Name} — {Decks.Count} deck{(Decks.Count == 1 ? string.Empty : "s")}.";
+                else
+                    StatusMessage = $"Opened {loaded.Name} with {loaded.Warnings.Count} warning{(loaded.Warnings.Count == 1 ? string.Empty : "s")}: {loaded.Warnings[0]}";
+            }
+            finally
+            {
+                _suspendDirty = false;
+            }
+        }
+
+        private static bool IsPathUnder(string path, string root)
+        {
+            var full = Path.GetFullPath(path);
+            var prefix = Path.GetFullPath(root)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            return full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
         }
     }
 }

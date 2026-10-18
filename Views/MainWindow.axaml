@@ -9,7 +9,7 @@
         x:Class="libvlc_media.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="Slide Presenter"
+        Title="{Binding WindowTitle}"
         Width="1440"
         Height="900"
         MinWidth="1100"
@@ -28,6 +28,9 @@
         <KeyBinding Gesture="F5" Command="{Binding ToggleProjectorCommand}"/>
         <KeyBinding Gesture="Space" Command="{Binding NextSlideCommand}"/>
         <KeyBinding Gesture="Delete" Command="{Binding RemoveSelectedSlideCommand}"/>
+        <KeyBinding Gesture="Ctrl+O" Command="{Binding OpenWorkspaceCommand}"/>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveWorkspaceCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+S" Command="{Binding SaveWorkspaceAsCommand}"/>
     </Window.KeyBindings>
 
     <Panel>
@@ -61,6 +64,12 @@
                             Orientation="Horizontal"
                             Spacing="8"
                             VerticalAlignment="Center">
+                    <Button Content="Open"
+                            Command="{Binding OpenWorkspaceCommand}"/>
+                    <Button Content="Save"
+                            Command="{Binding SaveWorkspaceCommand}"/>
+                    <Button Content="Save as"
+                            Command="{Binding SaveWorkspaceAsCommand}"/>
                     <TextBlock Text="Video renderer"
                                VerticalAlignment="Center"
                                Opacity="0.8"/>
@@ -158,18 +167,23 @@
         <Grid ColumnDefinitions="280,4,*,4,420" Margin="8">
             <Grid RowDefinitions="*,8,*">
                 <DockPanel>
-                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
-                        <TextBlock Text="Slide decks"
-                                   FontWeight="SemiBold"
-                                   VerticalAlignment="Center"/>
-                        <Button Grid.Column="1"
-                                Content="Import PDF"
-                                Command="{Binding ImportPdfCommand}"
-                                Margin="0,0,6,0"/>
-                        <Button Grid.Column="2"
-                                Content="Remove"
-                                Command="{Binding RemoveSelectedDeckCommand}"/>
-                    </Grid>
+                    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,8">
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                            <TextBlock Text="Slide decks"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                            <Button Grid.Column="1"
+                                    Content="Import PDF"
+                                    Command="{Binding ImportPdfCommand}"
+                                    Margin="0,0,6,0"/>
+                            <Button Grid.Column="2"
+                                    Content="Remove"
+                                    Command="{Binding RemoveSelectedDeckCommand}"/>
+                        </Grid>
+                        <ToggleSwitch IsChecked="{Binding CopyVideosIntoWorkspace}"
+                                      OnContent="Copy videos into workspace"
+                                      OffContent="Link videos by path"/>
+                    </StackPanel>
                     <TextBlock Text="Import a PDF. Each file becomes its own deck."
                                DockPanel.Dock="Top"
                                Opacity="0.55"
@@ -323,6 +337,12 @@
                                                                    FontSize="11"
                                                                    TextAlignment="Center"
                                                                    TextWrapping="Wrap"/>
+                                                        <TextBlock Text="Missing file"
+                                                                   FontSize="11"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="#ef9a9a"
+                                                                   TextAlignment="Center"
+                                                                   IsVisible="{Binding FileMissing}"/>
                                                     </StackPanel>
                                                     <Border Background="#99000000"
                                                             HorizontalAlignment="Left"

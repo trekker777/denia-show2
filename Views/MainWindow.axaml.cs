@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -58,6 +60,9 @@ namespace libvlc_media.Views
 
                 disposables.Add(ViewModel.PickPdfFiles.RegisterHandler(PickPdfs));
                 disposables.Add(ViewModel.PickVideoFiles.RegisterHandler(PickVideos));
+                disposables.Add(ViewModel.PickSaveWorkspacePath.RegisterHandler(PickSaveWorkspace));
+                disposables.Add(ViewModel.PickOpenWorkspacePath.RegisterHandler(PickOpenWorkspace));
+                disposables.Add(ViewModel.ConfirmUnsaved.RegisterHandler(ConfirmUnsaved));
                 disposables.Add(ViewModel.WhenAnyValue(x => x.IsProjectorOpen)
                     .ObserveOn(RxApp.MainThreadScheduler)
                     .Subscribe(_ => SyncProjector()));
@@ -76,6 +81,22 @@ namespace libvlc_media.Views
 
             Opened += (_, _) => RefreshDisplays();
             Closed += (_, _) => CloseProjectorWindow();
+            Closing += OnClosing;
+        }
+
+        private bool _forceClose;
+
+        private async void OnClosing(object? sender, WindowClosingEventArgs e)
+        {
+            if (_forceClose || ViewModel is null || !ViewModel.IsWorkspaceDirty)
+                return;
+
+            e.Cancel = true;
+            if (await ViewModel.ConfirmDiscardOrSaveAsync())
+            {
+                _forceClose = true;
+                Close();
+            }
         }
 
         private void QueueScrollLiveSlideIntoView() =>
@@ -641,6 +662,88 @@ namespace libvlc_media.Views
             }
 
             return paths;
+        }
+
+        private async Task PickSaveWorkspace(IInteractionContext<string, string?> context)
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save workspace as",
+                SuggestedFileName = context.Input + ".json",
+                DefaultExtension = "json",
+                FileTypeChoices =
+                [
+                    new FilePickerFileType("Slide workspace") { Patterns = ["*.json"] }
+                ]
+            });
+
+            context.SetOutput(file?.TryGetLocalPath());
+        }
+
+        private async Task PickOpenWorkspace(IInteractionContext<Unit, string?> context)
+        {
+            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "Open workspace folder",
+                AllowMultiple = false
+            });
+
+            context.SetOutput(folders.Count > 0 ? folders[0].TryGetLocalPath() : null);
+        }
+
+        private async Task ConfirmUnsaved(IInteractionContext<Unit, UnsavedDecision> context)
+        {
+            var choice = UnsavedDecision.Cancel;
+            var save = new Button { Content = "Save", MinWidth = 90 };
+            var discard = new Button { Content = "Don't save", MinWidth = 90 };
+            var cancel = new Button { Content = "Cancel", MinWidth = 90 };
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            buttons.Children.Add(save);
+            buttons.Children.Add(discard);
+            buttons.Children.Add(cancel);
+
+            var dialog = new Window
+            {
+                Title = "Unsaved changes",
+                Width = 460,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false,
+                Content = new StackPanel
+                {
+                    Margin = new Thickness(20),
+                    Spacing = 18,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = "Save the current workspace before continuing?",
+                            TextWrapping = TextWrapping.Wrap
+                        },
+                        buttons
+                    }
+                }
+            };
+
+            save.Click += (_, _) =>
+            {
+                choice = UnsavedDecision.Save;
+                dialog.Close();
+            };
+            discard.Click += (_, _) =>
+            {
+                choice = UnsavedDecision.Discard;
+                dialog.Close();
+            };
+            cancel.Click += (_, _) => dialog.Close();
+
+            await dialog.ShowDialog(this);
+            context.SetOutput(choice);
         }
     }
 }

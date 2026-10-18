@@ -36,7 +36,9 @@ namespace libvlc_media.ViewModels
                 VideoPath = path;
                 ImagePath = string.Empty;
                 PageNumber = 0;
-                PageLabel = Path.GetFileName(path);
+                PageLabel = FileMissing
+                    ? Path.GetFileName(path) + " (missing)"
+                    : Path.GetFileName(path);
                 _thumbnail = null;
             }
             else
@@ -68,13 +70,36 @@ namespace libvlc_media.ViewModels
 
         public bool IsVideo { get; }
 
-        public string ImagePath { get; }
+        public string ImagePath { get; private set; }
 
-        public string? VideoPath { get; }
+        public string? VideoPath { get; private set; }
 
         public int PageNumber { get; }
 
-        public string PageLabel { get; }
+        public string PageLabel { get; private set; }
+
+        public bool FileMissing =>
+            IsVideo
+                ? string.IsNullOrWhiteSpace(VideoPath) || !File.Exists(VideoPath)
+                : string.IsNullOrWhiteSpace(ImagePath) || !File.Exists(ImagePath);
+
+        public void RetargetImage(string path)
+        {
+            ImagePath = path;
+            this.RaisePropertyChanged(nameof(ImagePath));
+            this.RaisePropertyChanged(nameof(FileMissing));
+        }
+
+        public void RetargetVideo(string path)
+        {
+            VideoPath = path;
+            PageLabel = File.Exists(path)
+                ? Path.GetFileName(path)
+                : Path.GetFileName(path) + " (missing)";
+            this.RaisePropertyChanged(nameof(VideoPath));
+            this.RaisePropertyChanged(nameof(PageLabel));
+            this.RaisePropertyChanged(nameof(FileMissing));
+        }
 
         public Bitmap? Thumbnail
         {
