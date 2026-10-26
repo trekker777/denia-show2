@@ -17,7 +17,7 @@
       --muted: #9a9a9a;
       --live: #e53935;
       --accent: #4fc3f7;
-      --grid-min: 168px;
+      --grid-min: 280px;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
@@ -146,9 +146,9 @@
       grid-template-columns: repeat(auto-fill, minmax(var(--grid-min), 1fr));
       gap: 10px;
     }
-    body.density-compact { --grid-min: 110px; }
-    body.density-comfortable { --grid-min: 168px; }
-    body.density-large { --grid-min: 280px; }
+    body.density-compact { --grid-min: 250px; }
+    body.density-comfortable { --grid-min: 400px; }
+    body.density-large { --grid-min: 500px; }
     .slide {
       position: relative;
       background: #000;

@@ -602,6 +602,7 @@ namespace libvlc_media.ViewModels
             {
                 if (string.IsNullOrWhiteSpace(slide.VideoPath) || !File.Exists(slide.VideoPath))
                 {
+
                     StatusMessage = $"Video file was not found: {slide.PageLabel}";
                     NotifyOutputState();
                     return;
