@@ -494,6 +494,52 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
+
+                    <Border BorderBrush="#333"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="10">
+                        <StackPanel Spacing="8">
+                            <ToggleSwitch IsChecked="{Binding IsCountdownEnabled}"
+                                          OnContent="Countdown on"
+                                          OffContent="Countdown off"/>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <NumericUpDown Minimum="1"
+                                               Maximum="12"
+                                               Increment="1"
+                                               FormatString="0"
+                                               Width="110"
+                                               Value="{Binding CountdownHour}"/>
+                                <TextBlock Text=":"
+                                           FontWeight="Bold"
+                                           VerticalAlignment="Center"/>
+                                <NumericUpDown Minimum="0"
+                                               Maximum="59"
+                                               Increment="1"
+                                               FormatString="00"
+                                               Width="110"
+                                               Value="{Binding CountdownMinute}"/>
+                                <ComboBox Width="80"
+                                          SelectedIndex="{Binding CountdownPeriodIndex}">
+                                    <ComboBoxItem Content="AM"/>
+                                    <ComboBoxItem Content="PM"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Size"
+                                           VerticalAlignment="Center"
+                                           Opacity="0.75"/>
+                                <Slider Width="150"
+                                        Minimum="56"
+                                        Maximum="200"
+                                        Value="{Binding CountdownFontSize}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding CountdownHint}"
+                                       Opacity="0.55"
+                                       FontSize="11"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <Border DockPanel.Dock="Bottom"
@@ -520,7 +566,8 @@
                     </Grid>
                 </Border>
 
-                <Border Background="Black"
+                <Border x:Name="PreviewSurface"
+                        Background="Black"
                         CornerRadius="6"
                         MinHeight="220">
                     <Grid>

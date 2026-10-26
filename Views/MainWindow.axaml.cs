@@ -27,6 +27,9 @@ namespace libvlc_media.Views
         private const double DragThreshold = 6;
 
         private OutputWindow? _output;
+        private CountdownOverlayWindow? _previewCountdown;
+        private CountdownOverlayWindow? _projectorCountdown;
+        private bool _syncingCountdown;
         private bool _syncingProjector;
         private bool _fittingProjector;
         private MediaClipViewModel? _pendingVideo;
@@ -77,10 +80,27 @@ namespace libvlc_media.Views
                 disposables.Add(ViewModel.WhenAnyValue(x => x.SelectedSlide, x => x.SelectedDeck)
                     .ObserveOn(RxApp.MainThreadScheduler)
                     .Subscribe(_ => QueueScrollLiveSlideIntoView()));
+                disposables.Add(ViewModel.WhenAnyValue(
+                        x => x.IsCountdownVisible,
+                        x => x.CountdownText,
+                        x => x.CountdownFontSize)
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(_ => SyncCountdownOverlays()));
             });
 
-            Opened += (_, _) => RefreshDisplays();
-            Closed += (_, _) => CloseProjectorWindow();
+            Opened += (_, _) =>
+            {
+                RefreshDisplays();
+                SyncCountdownOverlays();
+            };
+            Closed += (_, _) =>
+            {
+                CloseProjectorWindow();
+                CloseCountdownOverlays();
+            };
+            PositionChanged += (_, _) => SyncCountdownOverlays();
+            SizeChanged += (_, _) => SyncCountdownOverlays();
+            PreviewSurface.LayoutUpdated += (_, _) => SyncCountdownOverlays();
             Closing += OnClosing;
         }
 
@@ -185,6 +205,8 @@ namespace libvlc_media.Views
                     PlaceOnDisplay(_output, ViewModel.SelectedDisplay);
                     ViewModel.OnProjectorSurfaceReady();
                 }
+
+                SyncCountdownOverlays();
             }
             finally
             {
@@ -194,6 +216,7 @@ namespace libvlc_media.Views
 
         private void OnOutputClosed(object? sender, EventArgs e)
         {
+            CloseOverlay(ref _projectorCountdown);
             if (_output is not null)
             {
                 _output.Closed -= OnOutputClosed;
@@ -208,6 +231,7 @@ namespace libvlc_media.Views
 
         private void CloseProjectorWindow()
         {
+            CloseOverlay(ref _projectorCountdown);
             if (_output is null)
                 return;
 
@@ -226,6 +250,7 @@ namespace libvlc_media.Views
             {
                 FitProjectorToDisplay();
                 ViewModel?.OnProjectorSurfaceReady();
+                SyncCountdownOverlays();
             }, DispatcherPriority.Loaded);
         }
 
@@ -240,6 +265,7 @@ namespace libvlc_media.Views
             }
 
             FitProjectorToDisplay();
+            SyncCountdownOverlays();
         }
 
         private void FitProjectorToDisplay()
@@ -256,6 +282,92 @@ namespace libvlc_media.Views
             {
                 _fittingProjector = false;
             }
+        }
+
+        private void SyncCountdownOverlays()
+        {
+            if (_syncingCountdown || ViewModel is null || !IsVisible)
+                return;
+
+            _syncingCountdown = true;
+            try
+            {
+                SyncOverlay(
+                    ref _previewCountdown,
+                    PreviewSurface,
+                    this,
+                    topmost: false);
+
+                if (_output is not null && ViewModel.IsProjectorOpen)
+                {
+                    SyncOverlay(
+                        ref _projectorCountdown,
+                        _output,
+                        _output,
+                        topmost: true);
+                }
+                else
+                {
+                    CloseOverlay(ref _projectorCountdown);
+                }
+            }
+            finally
+            {
+                _syncingCountdown = false;
+            }
+        }
+
+        private void SyncOverlay(
+            ref CountdownOverlayWindow? overlay,
+            Visual target,
+            Window owner,
+            bool topmost)
+        {
+            if (ViewModel is null || !ViewModel.IsCountdownVisible || string.IsNullOrEmpty(ViewModel.CountdownText))
+            {
+                overlay?.Hide();
+                return;
+            }
+
+            overlay ??= CreateCountdownOverlay(topmost);
+            overlay.Topmost = topmost;
+
+            if (!overlay.IsVisible)
+            {
+                overlay.Position = new PixelPoint(-32000, -32000);
+                overlay.Show(owner);
+                overlay.Topmost = topmost;
+            }
+
+            overlay.FitTopRightOf(target, ViewModel.CountdownText, ViewModel.CountdownFontSize);
+        }
+
+        private CountdownOverlayWindow CreateCountdownOverlay(bool topmost)
+        {
+            var overlay = new CountdownOverlayWindow
+            {
+                DataContext = ViewModel,
+                Topmost = topmost,
+                ShowActivated = false
+            };
+            overlay.ScalingChanged += (_, _) => SyncCountdownOverlays();
+            return overlay;
+        }
+
+        private static void CloseOverlay(ref CountdownOverlayWindow? overlay)
+        {
+            if (overlay is null)
+                return;
+
+            var window = overlay;
+            overlay = null;
+            window.Close();
+        }
+
+        private void CloseCountdownOverlays()
+        {
+            CloseOverlay(ref _previewCountdown);
+            CloseOverlay(ref _projectorCountdown);
         }
 
         private void PlaceOnDisplay(Window window, DisplayInfo? display)

@@ -33,6 +33,7 @@ namespace libvlc_media.ViewModels
         private readonly object _remoteThumbLock = new();
         private readonly DispatcherTimer _advanceTimer;
         private readonly DispatcherTimer _videoProgressTimer;
+        private readonly DispatcherTimer _countdownTimer;
         private RemoteServer? _remote;
 
         private SlideDeckViewModel? _selectedDeck;
@@ -66,6 +67,14 @@ namespace libvlc_media.ViewModels
         private bool _isWorkspaceDirty;
         private bool _copyVideosIntoWorkspace;
         private bool _suspendDirty;
+        private bool _isCountdownEnabled;
+        private decimal _countdownHour = 9;
+        private decimal _countdownMinute;
+        private int _countdownPeriodIndex;
+        private double _countdownFontSize = 96;
+        private bool _isCountdownVisible;
+        private string _countdownText = string.Empty;
+        private string _countdownHint = "Shows on the slide this morning before the time above.";
 
         public MainWindowViewModel()
             : this(null)
@@ -111,6 +120,8 @@ namespace libvlc_media.ViewModels
             _advanceTimer.Tick += (_, _) => GoToNextSlide(stopAtEnd: true);
             _videoProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
             _videoProgressTimer.Tick += (_, _) => UpdateVideoProgress();
+            _countdownTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _countdownTimer.Tick += (_, _) => RefreshCountdown();
 
             if (_playback is not null)
             {
@@ -506,6 +517,80 @@ namespace libvlc_media.ViewModels
             }
         }
 
+        public bool IsCountdownEnabled
+        {
+            get => _isCountdownEnabled;
+            set
+            {
+                if (!SetAndRaise(ref _isCountdownEnabled, value))
+                    return;
+
+                if (value)
+                    _countdownTimer.Start();
+                else
+                    _countdownTimer.Stop();
+
+                RefreshCountdown();
+            }
+        }
+
+        public decimal CountdownHour
+        {
+            get => _countdownHour;
+            set
+            {
+                var hour = Math.Clamp(Math.Round(value), 1, 12);
+                if (SetAndRaise(ref _countdownHour, hour))
+                    RefreshCountdown();
+            }
+        }
+
+        public decimal CountdownMinute
+        {
+            get => _countdownMinute;
+            set
+            {
+                var minute = Math.Clamp(Math.Round(value), 0, 59);
+                if (SetAndRaise(ref _countdownMinute, minute))
+                    RefreshCountdown();
+            }
+        }
+
+        public int CountdownPeriodIndex
+        {
+            get => _countdownPeriodIndex;
+            set
+            {
+                var index = value == 1 ? 1 : 0;
+                if (SetAndRaise(ref _countdownPeriodIndex, index))
+                    RefreshCountdown();
+            }
+        }
+
+        public double CountdownFontSize
+        {
+            get => _countdownFontSize;
+            set => this.RaiseAndSetIfChanged(ref _countdownFontSize, Math.Clamp(value, 56, 200));
+        }
+
+        public bool IsCountdownVisible
+        {
+            get => _isCountdownVisible;
+            private set => this.RaiseAndSetIfChanged(ref _isCountdownVisible, value);
+        }
+
+        public string CountdownText
+        {
+            get => _countdownText;
+            private set => this.RaiseAndSetIfChanged(ref _countdownText, value);
+        }
+
+        public string CountdownHint
+        {
+            get => _countdownHint;
+            private set => this.RaiseAndSetIfChanged(ref _countdownHint, value);
+        }
+
         public string StatusMessage
         {
             get => _statusMessage;
@@ -809,6 +894,7 @@ namespace libvlc_media.ViewModels
         {
             _advanceTimer.Stop();
             _videoProgressTimer.Stop();
+            _countdownTimer.Stop();
             _remote?.Dispose();
             _remote = null;
             RemoteQrImage = null;
@@ -1295,6 +1381,53 @@ namespace libvlc_media.ViewModels
                 return $"{minutes / 60}:{(minutes % 60):00}:{seconds:00}";
 
             return $"{minutes}:{seconds:00}";
+        }
+
+        private void RefreshCountdown()
+        {
+            if (!IsCountdownEnabled)
+            {
+                IsCountdownVisible = false;
+                CountdownText = string.Empty;
+                CountdownHint = "Shows on the slide this morning before the time above.";
+                return;
+            }
+
+            var now = DateTime.Now.TimeOfDay;
+            var target = CountdownTargetTime;
+            if (now >= target)
+            {
+                IsCountdownVisible = false;
+                CountdownText = string.Empty;
+                CountdownHint = "Past the service time today — overlay hidden.";
+                return;
+            }
+
+            CountdownText = FormatCountdown(target - now);
+            IsCountdownVisible = true;
+            CountdownHint = CountdownText;
+        }
+
+        private TimeSpan CountdownTargetTime
+        {
+            get
+            {
+                var hour = (int)CountdownHour;
+                var hour24 = (hour % 12) + (CountdownPeriodIndex == 1 ? 12 : 0);
+                return new TimeSpan(hour24, (int)CountdownMinute, 0);
+            }
+        }
+
+        internal static string FormatCountdown(TimeSpan remaining)
+        {
+            var totalSeconds = Math.Max(0, (int)remaining.TotalSeconds);
+            var hours = totalSeconds / 3600;
+            var minutes = (totalSeconds % 3600) / 60;
+            var seconds = totalSeconds % 60;
+            if (hours > 0)
+                return $"{hours}:{minutes:D2}:{seconds:D2}";
+
+            return $"{minutes}:{seconds:D2}";
         }
 
         private void RestartAdvanceTimer()
