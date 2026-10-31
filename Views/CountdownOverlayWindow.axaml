@@ -1,0 +1,19 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:libvlc_media.Controls"
+        x:Class="libvlc_media.Views.CountdownOverlayWindow"
+        Title="Countdown"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        SizeToContent="WidthAndHeight"
+        CanResize="False"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        WindowStartupLocation="Manual"
+        WindowDecorations="None"
+        Focusable="False">
+    <controls:OutlinedText x:Name="BadgeText"
+                           Text="0:00"
+                           FontSize="96"
+                           FontWeight="Bold"/>
+</Window>
